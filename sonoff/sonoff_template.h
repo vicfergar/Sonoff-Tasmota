@@ -121,6 +121,7 @@ enum fpins_t {
   GPIO_CS_SDO,         // CS5460A SDO data output (Power meter)
   GPIO_PZEM_RX,        // PZEM004T RX (Power meter)
   GPIO_PZEM_TX,        // PZEM004T TX (Power meter)
+  GPIO_OPEN_DOOR,      // Entry Phone (Door Open)
   GPIO_USER,           // User configurable
   GPIO_MAX };
 
@@ -152,6 +153,7 @@ enum module_t {
   SONOFF_BN,
   CS5460A,
   PZEM004T,
+  ENTRY_PHONE,
   MAXMODULE };
 
 /********************************************************************************************/
@@ -503,6 +505,23 @@ const mytmplt modules[MAXMODULE] PROGMEM = {
      GPIO_LED1_INV,    // GPIO13 BLUE LED
      GPIO_USER,        // GPIO14 Optional sensor
      0, 0, 0
+  },
+  { "Entry Phone",     // Entry Phone Board (ESP8266)
+     0,                // not used
+     GPIO_USER,        // GPIO00 
+     0,                // GPIO01
+     0,                // GPIO02
+     0,                // GPIO03
+     0,                // GPIO04
+     GPIO_OPEN_DOOR,   // GPIO05 Relay (Door open)
+     0, 0, 0, 0, 0, 0, // Flash connection
+     0,                // GPIO12
+     0,                // GPIO13
+     0,                // GPIO14
+     0,                // GPIO15
+     0,                // GPIO16
+     0                 // ADC0 A0 Analog input
   }
+  
 };
 

@@ -1609,6 +1609,11 @@ void mqttDataCb(char* topic, byte* data, unsigned int data_len)
       // Serviced
     }
 #endif // USE_WATTMETER
+#ifdef USE_ENTRY_PHONE
+    else if ((pin[GPIO_OPEN_DOOR] < 99) && entryphone_command(type, index, dataBuf, data_len, payload, svalue, sizeof(svalue))) {
+      // Serviced
+    }
+#endif // USE_ENTRY_PHONE
 #ifdef USE_I2C
     else if (i2c_flg && !strcmp_P(type,PSTR("I2CSCAN"))) {
       i2c_scan(svalue, sizeof(svalue));
@@ -2671,6 +2676,12 @@ void GPIO_init()
     ws2812_init(Maxdevice);
   }
 #endif  // USE_WS2812
+
+#ifdef USE_ENTRY_PHONE
+  if (pin[GPIO_OPEN_DOOR] < 99) {
+    entryphone_init();
+  }
+#endif // USE_ENTRY_PHONE
 
 #ifdef USE_IR_REMOTE
   if (pin[GPIO_IRSEND] < 99) {
