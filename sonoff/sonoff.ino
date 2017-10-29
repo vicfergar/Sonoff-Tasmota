@@ -1580,7 +1580,7 @@ void mqttDataCb(char* topic, byte* data, unsigned int data_len)
     }
 #endif // USE_WATTMETER
 #ifdef USE_ENTRY_PHONE
-    else if ((pin[GPIO_OPEN_DOOR] < 99) && entryphone_command(type, index, dataBuf, data_len, payload, svalue, sizeof(svalue))) {
+    else if ((ENTRY_PHONE == sysCfg.module) && entryphone_command(type, index, dataBuf, data_len, payload, svalue, sizeof(svalue))) {
       // Serviced
     }
 #endif // USE_ENTRY_PHONE
@@ -2761,12 +2761,6 @@ void GPIO_init()
   }
 #endif  // USE_WS2812
 
-#ifdef USE_ENTRY_PHONE
-  if (pin[GPIO_OPEN_DOOR] < 99) {
-    entryphone_init();
-  }
-#endif // USE_ENTRY_PHONE
-
 #ifdef USE_IR_REMOTE
   if (pin[GPIO_IRSEND] < 99) {
     ir_send_init();
@@ -2811,6 +2805,13 @@ void GPIO_init()
     ldy_init();
   }
 #endif // USE_CTY835
+
+#ifdef USE_ENTRY_PHONE
+  if (ENTRY_PHONE == sysCfg.module) {
+    Maxdevice = 0;
+    entryphone_init();
+  }
+#endif // USE_ENTRY_PHONE
 
 #ifdef USE_DHT
   if (dht_flg) {

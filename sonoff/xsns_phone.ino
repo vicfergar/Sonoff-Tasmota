@@ -30,7 +30,7 @@ POSSIBILITY OF SUCH DAMAGE.
  * Source: Victor Ferrer https://github.com/vicfergar/Sonoff-MQTT-OTA-Arduino
 \*********************************************************************************************/
 
-#define PHONE_LOOP_INTERVAL 1000
+#define PHONE_LOOP_INTERVAL 200
 #define PHONE_OPEN_TIME 1000
 
 Ticker tickerPhone;
@@ -44,16 +44,24 @@ typedef enum
 
 int _phone_openingDoorTime = 0;
 int _phone_doorPin;
-EntryPhoneStates _phone_currentState = WAIT_OP;
+int _phone_callingPin;
+EntryPhoneStates _phone_doortState = WAIT_OP;
+bool _phone_isCalling;
+
 
 void entryphone_init()
 {
   //Set door pinout
-  _phone_doorPin = pin[GPIO_OPEN_DOOR];
+  _phone_doorPin = 15;
   pinMode(_phone_doorPin, OUTPUT);
-  digitalWrite(_phone_doorPin, HIGH); //disable pin
+  digitalWrite(_phone_doorPin, LOW); //disable pin
+
+  //Set calling door detector
+  _phone_callingPin = 13;
+  pinMode(_phone_callingPin, INPUT);
+  _phone_isCalling = false;
   
-  tickerPhone.attach_ms(PHONE_LOOP_INTERVAL, entryphone_everysecond);
+  tickerPhone.attach_ms(PHONE_LOOP_INTERVAL, entryphone_everyinterval);
 }
 
 boolean entryphone_command(char *type, uint16_t index, char *dataBuf, uint16_t data_len, int16_t payload, char *svalue, uint16_t ssvalue)
@@ -62,7 +70,7 @@ boolean entryphone_command(char *type, uint16_t index, char *dataBuf, uint16_t d
 
   if (!strcmp(type,"OPENDOOR")) {
     snprintf_P(svalue, ssvalue, PSTR("{\"OpenDoor\":\"Done\"}"));
-    _phone_currentState = REQUEST_OPEN_DOOR;
+    _phone_doortState = REQUEST_OPEN_DOOR;
   }
   else {
     serviced = false;
@@ -70,18 +78,29 @@ boolean entryphone_command(char *type, uint16_t index, char *dataBuf, uint16_t d
   return serviced;
 }
 
-void entryphone_everysecond()
+void entryphone_everyinterval()
 {
-  if(_phone_currentState == REQUEST_OPEN_DOOR){
-    _phone_currentState = OPENING_DOOR;
-    _phone_openingDoorTime = PHONE_OPEN_TIME;
-    digitalWrite(_phone_doorPin, LOW); //enable pin
+  bool callingValue = !digitalRead(_phone_callingPin);
+
+  if(callingValue != _phone_isCalling){ 
+    if(callingValue){ // CALLING
+      char svalue[60];
+      snprintf_P(svalue, sizeof(svalue), "{\"State\":\"CALLING\"}");
+      mqtt_publish_topic_P(1, PSTR("ENTRY_PHONE"), svalue);
+    }
+    _phone_isCalling = callingValue;
   }
-  else if(_phone_currentState == OPENING_DOOR){
+  
+  if(_phone_doortState == REQUEST_OPEN_DOOR){
+    _phone_doortState = OPENING_DOOR;
+    _phone_openingDoorTime = PHONE_OPEN_TIME;
+    digitalWrite(_phone_doorPin, HIGH); //enable pin
+  }
+  else if(_phone_doortState == OPENING_DOOR){
     _phone_openingDoorTime -= PHONE_LOOP_INTERVAL;
     if(_phone_openingDoorTime <= 0){
-      _phone_currentState = WAIT_OP;
-      digitalWrite(_phone_doorPin, HIGH); //disable pin
+      _phone_doortState = WAIT_OP;
+      digitalWrite(_phone_doorPin, LOW); //disable pin
     }
   }
 }

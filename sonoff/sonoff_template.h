@@ -124,6 +124,7 @@ enum fpins_t {
   GPIO_PZEM_RX,        // PZEM004T RX (Power meter)
   GPIO_PZEM_TX,        // PZEM004T TX (Power meter)
   GPIO_OPEN_DOOR,      // Entry Phone (Door Open)
+  GPIO_CALLING_DOOR,   // Entry Phone (Calling door)
   GPIO_USER,           // User configurable
   GPIO_MAX };
 
@@ -210,7 +211,11 @@ const uint8_t nicelist[MAXMODULE] PROGMEM = {
   H801,
   HUAFAN_SS,
   AILIGHT,
-  WEMOS
+  WEMOS,
+  CS5460A,
+  PZEM004T,
+  WM_CANDY_CTY_835,
+  ENTRY_PHONE,
 };
 
 // Default module settings
@@ -660,14 +665,13 @@ const mytmplt modules[MAXMODULE] PROGMEM = {
      0,                // GPIO02
      0,                // GPIO03
      0,                // GPIO04
-     GPIO_OPEN_DOOR,   // GPIO05 Relay (Door open)
+     0,                // GPIO05
      0, 0, 0, 0, 0, 0, // Flash connection
      0,                // GPIO12
-     0,                // GPIO13
+     0,                // GPIO13 Digital in (Calling door)
      0,                // GPIO14
-     0,                // GPIO15
-     0,                // GPIO16
-     0                 // ADC0 A0 Analog input
+     0,                // GPIO15 Relay (Door open)
+     0, 0
   }
 };
 
