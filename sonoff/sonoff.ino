@@ -84,7 +84,7 @@ enum TasmotaCommands {
   CMND_LOGHOST, CMND_LOGPORT, CMND_IPADDRESS, CMND_NTPSERVER, CMND_AP, CMND_SSID, CMND_PASSWORD, CMND_HOSTNAME,
   CMND_WIFICONFIG, CMND_FRIENDLYNAME, CMND_SWITCHMODE,
   CMND_TELEPERIOD, CMND_RESTART, CMND_RESET, CMND_TIMEZONE, CMND_TIMESTD, CMND_TIMEDST, CMND_ALTITUDE, CMND_LEDPOWER, CMND_LEDSTATE,
-  CMND_I2CSCAN, CMND_SERIALSEND, CMND_BAUDRATE, CMND_SERIALDELIMITER };
+  CMND_I2CSCAN, CMND_SERIALSEND, CMND_BAUDRATE, CMND_SERIALDELIMITER, CMND_COVER };
 const char kTasmotaCommands[] PROGMEM =
   D_CMND_BACKLOG "|" D_CMND_DELAY "|" D_CMND_POWER "|" D_CMND_STATUS "|" D_CMND_STATE "|"  D_CMND_POWERONSTATE "|" D_CMND_PULSETIME "|"
   D_CMND_BLINKTIME "|" D_CMND_BLINKCOUNT "|" D_CMND_SENSOR "|" D_CMND_SAVEDATA "|" D_CMND_SETOPTION "|" D_CMND_TEMPERATURE_RESOLUTION "|" D_CMND_HUMIDITY_RESOLUTION "|"
@@ -94,7 +94,7 @@ const char kTasmotaCommands[] PROGMEM =
   D_CMND_LOGHOST "|" D_CMND_LOGPORT "|" D_CMND_IPADDRESS "|" D_CMND_NTPSERVER "|" D_CMND_AP "|" D_CMND_SSID "|" D_CMND_PASSWORD "|" D_CMND_HOSTNAME "|"
   D_CMND_WIFICONFIG "|" D_CMND_FRIENDLYNAME "|" D_CMND_SWITCHMODE "|"
   D_CMND_TELEPERIOD "|" D_CMND_RESTART "|" D_CMND_RESET "|" D_CMND_TIMEZONE "|" D_CMND_TIMESTD "|" D_CMND_TIMEDST "|" D_CMND_ALTITUDE "|" D_CMND_LEDPOWER "|" D_CMND_LEDSTATE "|"
-  D_CMND_I2CSCAN "|" D_CMND_SERIALSEND "|" D_CMND_BAUDRATE "|" D_CMND_SERIALDELIMITER;
+  D_CMND_I2CSCAN "|" D_CMND_SERIALSEND "|" D_CMND_BAUDRATE "|" D_CMND_SERIALDELIMITER "|" D_CMND_COVER;
 
 // Global variables
 unsigned long feature_drv1;                 // Compiled driver feature map
@@ -140,6 +140,9 @@ uint8_t backlog_pointer = 0;                // Command backlog pointer
 uint8_t backlog_mutex = 0;                  // Command backlog pending
 uint16_t backlog_delay = 0;                 // Command backlog delay
 uint8_t interlock_mutex = 0;                // Interlock power command pending
+int16_t cover_position[MAX_RELAYS/2] = { 0 };  // Position of each Cover
+int16_t cover_direction[MAX_RELAYS/2] = { 0 }; // which direction
+int16_t cover_deferred[MAX_RELAYS/2] = { 0 };  // which direction
 
 #ifdef USE_MQTT_TLS
   WiFiClientSecure EspClient;               // Wifi Secure Client
@@ -435,7 +438,7 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
     if (Settings.ledstate &0x02) blinks++;
 
     if (!strcmp(dataBuf,"?")) data_len = 0;
-    int16_t payload = -99;               // No payload
+    int16_t payload = -101;               // No payload
     uint16_t payload16 = 0;
     long payload32 = strtol(dataBuf, &p, 10);
     if (p != dataBuf) {
@@ -495,6 +498,11 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
       if ((payload < 0) || (payload > 4)) payload = 9;
 //      Settings.flag.device_index_enable = user_append_index;
       ExecuteCommandPower(index, payload, SRC_IGNORE);
+      fallback_topic_flag = 0;
+      return;
+    }
+    else if ((CMND_COVER == command_code) && (index > 0) && (index <= (devices_present / 2))) {
+      ExecuteCommandCover(index, payload);
       fallback_topic_flag = 0;
       return;
     }
@@ -569,7 +577,7 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
       XsnsCall(FUNC_COMMAND);
 //      if (!XsnsCall(FUNC_COMMAND)) type = NULL;
     }
-    else if ((CMND_SETOPTION == command_code) && ((index <= 26) || ((index > 31) && (index <= P_MAX_PARAM8 + 31)))) {
+    else if ((CMND_SETOPTION == command_code) && ((index <= 28) || ((index > 31) && (index <= P_MAX_PARAM8 + 31)))) {
       if (index <= 31) {
         ptype = 0;   // SetOption0 .. 31
       } else {
@@ -582,6 +590,7 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
             switch (index) {
               case 3:   // mqtt
               case 15:  // pwm_control
+              case 28:  // cover mode enabled
                 restart_flag = 2;
               case 0:   // save_state
               case 1:   // button_restrict
@@ -615,6 +624,9 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
               HAssDiscovery(1);
             }
 #endif  // USE_HOME_ASSISTANT
+            if (28 == index) { // cover_mode_enabled
+              SettingsSave(0);
+            }
           }
         }
         else {  // SetOption32 ..
@@ -1183,6 +1195,24 @@ void ExecuteCommandPower(byte device, byte state, int source)
     publish_power = 0;
   }
   if ((device < 1) || (device > devices_present)) device = 1;
+  if (Settings.flag.cover_mode_enabled) {
+    if (state == POWER_OFF || (state >= 3 && state <= 4))
+      ;
+    else
+    if (state == POWER_ON) {
+      if (device % 2 == 1)  // odd numbers off, even on
+        state = POWER_OFF;
+      else
+        state = POWER_ON;
+    }
+    else
+    if (state != POWER_TOGGLE) {
+      state = -101;
+    }
+
+    ExecuteCommandCover((device + 1) / 2, state);
+    return;
+  }
   if (device <= MAX_PULSETIMERS) pulse_timer[(device -1)] = 0;
   power_t mask = 1 << (device -1);
   if (state <= POWER_TOGGLE) {
@@ -1239,6 +1269,136 @@ void ExecuteCommandPower(byte device, byte state, int source)
     return;
   }
   if (publish_power) MqttPublishPowerState(device);
+}
+
+void ExecuteCommandCover(byte cover, int16_t position)
+{
+// cover = relay pair (1-2,3-4,5-6,7-8)
+// position = 0 - Close
+// position = 1 - Open
+// position = 2 - Toggle between off/stop/on/stop...
+// position = 3 - stop
+// position = 4 - stop and reset to 0
+// otherwise percentage open/closed
+
+  if (!Settings.flag.cover_mode_enabled) {
+    return;
+  }
+  if ((cover < 1) || (cover > (devices_present / 2))) {
+    cover = 1;
+  }
+
+  cover -= 1;
+  if (position < 0) {
+    if (position == -101) {
+      MqttPublishPowerState(cover + 1);
+      return;
+    }
+    cover_position[cover] = abs(position);
+    position = POWER_BLINK;
+  }
+  if ((position == 0 or position == 1) && pulse_timer[cover] ){
+    position = POWER_BLINK;
+  }
+  if (position == POWER_TOGGLE) {
+    if (pulse_timer[cover])
+      position = POWER_BLINK;
+    else if (cover_direction[cover] == 0)  // haven't moved ever
+    {
+      if (cover_position[cover] > 0)
+        position = 0;
+      else
+        position = 100;
+    }
+    else if (cover_direction[cover] == 1)  // were opening
+      position = 0;
+    else
+      position = 100;
+  }
+  if (position == POWER_BLINK || position == POWER_BLINK_STOP) {  // switch off relays
+    if (cover_deferred[cover] != 0){  // we have a delayed start
+      pulse_timer[cover] = abs(cover_deferred[cover]);
+      cover_deferred[cover] = 0;
+      byte device = 2 * cover;
+      if (cover_direction[cover] > 0)
+        device += 1;
+      power_t mask = (1 << device);
+      power |= mask;
+      SetDevicePower(power, SRC_COVER);
+      MqttPublishPowerState(cover + 1);
+      return;
+    }
+    snprintf_P(log_data, sizeof(log_data), "Arrived:: %d", cover_position[cover]);
+    AddLog(LOG_LEVEL_DEBUG);
+    if (cover_position[cover] < 0 || position == POWER_BLINK_STOP)
+      cover_position[cover] = 0;
+    else
+    if (cover_position[cover] > Settings.pulse_timer[cover])
+      cover_position[cover] = Settings.pulse_timer[cover];
+    pulse_timer[cover] = 0;
+    power &= (POWER_MASK ^ (3 << (cover * 2)));
+    SetDevicePower(power, SRC_COVER); 
+    MqttPublishPowerState(cover + 1);
+    return;
+  }
+  if (position == POWER_ON || position > 100)
+    position = 100;
+
+  position = Settings.pulse_timer[cover] * position / 100;
+
+  byte device = 2 * cover;
+  byte other = device + 1;
+
+  // Add startup time to travel distance
+  int16_t extra = Settings.pulse_timer[cover + (devices_present / 2)];
+
+  pulse_timer[cover] = abs(cover_position[cover] - position) + extra;
+
+  if (cover_position[cover] < position) {  // switch relays
+    device += 1;
+    other -= 1;
+    cover_direction[cover] = 1;
+    cover_position[cover] -= extra;
+  }
+  else {
+    cover_direction[cover] = -1;
+    cover_position[cover] += extra;
+  }
+
+  bool defer = (power & (1 << other));
+  // make sure opposite direction is off
+  power &= (POWER_MASK ^ (1 << other));
+  SetDevicePower(power, SRC_COVER);
+
+  // if (defer)
+  //   cover_position[cover] -= extra * cover_direction[cover];
+
+  // If going all completely Open or closed then add 10% timing to ensure, otherwise add
+  if (position == 0 || position >= Settings.pulse_timer[cover])
+    pulse_timer[cover] += Settings.pulse_timer[cover] / 10;
+
+  // Add the millsecond offset used in pulse timers
+  if (pulse_timer[cover] > 11)
+    pulse_timer[cover] += 100;
+  else
+    pulse_timer[cover] *= 10;
+
+  if (defer)
+  {
+    cover_deferred[cover] = pulse_timer[cover] * cover_direction[cover];
+    if (extra > 11)
+      extra += 100;
+    else
+      extra *= 10;
+    pulse_timer[cover] = extra;
+    return;
+  }
+  power_t mask = (1 << device);
+  power |= mask;
+  SetDevicePower(power, SRC_COVER);
+
+  snprintf_P(log_data, sizeof(log_data), "Pulse: %d, To:%d,From:%d,By:%d", pulse_timer[cover], position, cover_position[cover], cover_direction[cover]);
+  AddLog(LOG_LEVEL_DEBUG);
 }
 
 void StopAllPowerBlink()
@@ -1397,12 +1557,25 @@ void MqttShowState()
   snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"" D_JSON_VCC "\":%s"), mqtt_data, stemp1);
 #endif
 
-  for (byte i = 0; i < devices_present; i++) {
-    if (i == light_device -1) {
-      LightState(1);
-    } else {
-      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"%s\":\"%s\""), mqtt_data, GetPowerDevice(stemp1, i +1, sizeof(stemp1), Settings.flag.device_index_enable), GetStateText(bitRead(power, i)));
+  if (Settings.flag.cover_mode_enabled) {
+    for (byte i = 0; i < devices_present / 2; i++) {
+      if (cover_position[i] == 0) {
+        snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"Cover%d\":\"%s\""), mqtt_data, i + 1, GetStateText(0));
+      }
+      else if (cover_position[i] >= Settings.pulse_timer[i]) {
+        snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"Cover%d\":\"%s\""), mqtt_data, i + 1, GetStateText(1));
+      }
+      else {
+        snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"Cover%d\":%d"), mqtt_data, i + 1, cover_position[i] * 100 / Settings.pulse_timer[i]);
+      }
     }
+  }
+  else
+  for (byte i = 0; i < devices_present; i++) {
+    if (i == light_device -1)
+      LightState(1);
+    else
+      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"%s\":\"%s\""), mqtt_data, GetPowerDevice(stemp1, i +1, sizeof(stemp1), Settings.flag.device_index_enable), GetStateText(bitRead(power, i)));
   }
 
   if (pwm_present) {
@@ -1445,6 +1618,7 @@ void PerformEverySecond()
 
   for (byte i = 0; i < MAX_PULSETIMERS; i++) {
     if (pulse_timer[i] > 111) pulse_timer[i]--;
+    if (Settings.flag.cover_mode_enabled && i < devices_present / 2 && pulse_timer[i] && cover_deferred[i] == 0) cover_position[i] += cover_direction[i];
   }
 
   if (seriallog_timer) {
@@ -1717,7 +1891,10 @@ void SwitchHandler()
 
         if (switchflag < 3) {
           if (!SendKey(1, i +1, switchflag)) {  // Execute command via MQTT
-            ExecuteCommandPower(i +1, switchflag, SRC_SWITCH);        // Execute command internally (if i < devices_present)
+            if (Settings.flag.cover_mode_enabled) 
+              ExecuteCommandCover((i+1)/2+1, i % 2);
+            else 
+              ExecuteCommandPower(i +1, switchflag, SRC_SWITCH);        // Execute command internally (if i < devices_present)
           }
         }
 
@@ -1764,8 +1941,13 @@ void StateLoop()
       if ((pulse_timer[i] > 0) && (pulse_timer[i] < 112)) {
         pulse_timer[i]--;
         if (!pulse_timer[i]) {
+          if (Settings.flag.cover_mode_enabled && i < (devices_present / 2)) {
+            ExecuteCommandCover(i + 1, POWER_BLINK);
+          }
+          else {
 //          ExecuteCommandPower(i +1, POWER_OFF, SRC_PULSETIMER);
           ExecuteCommandPower(i +1, (POWER_ALL_OFF_PULSETIME_ON == Settings.poweronstate) ? POWER_ON : POWER_OFF, SRC_PULSETIMER);
+          }
         }
       }
     }
@@ -2442,6 +2624,17 @@ void setup()
   snprintf_P(log_data, sizeof(log_data), PSTR(D_WARNING_MINIMAL_VERSION));
   AddLog(LOG_LEVEL_INFO);
 #endif  // BE_MINIMAL
+
+  if (Settings.flag.cover_mode_enabled){
+    for (byte i = 0; i < devices_present / 2; i += 1) {
+      cover_position[i] = 0; // -1
+      cover_direction[i] = 0;
+      if (Settings.pulse_timer[i] == 0) {
+        Settings.pulse_timer[i] = 30;  // 30 seconds
+        Settings.pulse_timer[i + (devices_present / 2)] = 2; // 2 seconds
+      }
+    }
+  }
 
   RtcInit();
 

@@ -281,6 +281,28 @@ void MqttPublishPowerState(byte device)
   char scommand[33];
 
   if ((device < 1) || (device > devices_present)) { device = 1; }
+
+  if (Settings.flag.cover_mode_enabled) {
+    if (device > devices_present / 2)
+      return;
+    snprintf_P(scommand, sizeof(scommand), "Cover%d", device);
+    GetTopic_P(stopic, STAT, mqtt_topic, (Settings.flag.mqtt_response) ? scommand : S_RSLT_RESULT);
+    byte i = device - 1;
+    int16_t posn = cover_position[i];
+    if (posn == 0){
+      snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_SVALUE, scommand, GetStateText(0));
+    }
+    else if (posn >= Settings.pulse_timer[i]) {
+      snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_SVALUE, scommand, GetStateText(1));
+    }
+    else 
+    {
+      snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_NVALUE, scommand, posn * 100 / Settings.pulse_timer[i]);
+    }
+    MqttPublish(stopic);
+    return;
+  }
+
   GetPowerDevice(scommand, device, sizeof(scommand), Settings.flag.device_index_enable);
 
   GetTopic_P(stopic, STAT, mqtt_topic, (Settings.flag.mqtt_response) ? scommand : S_RSLT_RESULT);
