@@ -35,6 +35,10 @@ enum UserSelectablePins {
   GPIO_SWT2,
   GPIO_SWT3,
   GPIO_SWT4,
+  GPIO_SWT5,
+  GPIO_SWT6,
+  GPIO_SWT7,
+  GPIO_SWT8,
   GPIO_KEY1,           // Button usually connected to GPIO0
   GPIO_KEY2,
   GPIO_KEY3,
@@ -97,6 +101,9 @@ enum UserSelectablePins {
   GPIO_SDM120_RX,      // SDM120 Serial interface
   GPIO_SDM630_TX,      // SDM630 Serial interface
   GPIO_SDM630_RX,      // SDM630 Serial interface
+  GPIO_TM16CLK,        // TM1638 Clock
+  GPIO_TM16DIO,        // TM1638 Data I/O
+  GPIO_TM16STB,        // TM1638 Strobe
   GPIO_SENSOR_END };
 
 // Programmer selectable GPIO functionality offset by user selectable GPIOs
@@ -124,7 +131,7 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_I2C_SCL "|" D_SENSOR_I2C_SDA "|"
   D_SENSOR_WS2812 "|"
   D_SENSOR_IRSEND "|"
-  D_SENSOR_SWITCH "1|" D_SENSOR_SWITCH "2|" D_SENSOR_SWITCH "3|" D_SENSOR_SWITCH "4|"
+  D_SENSOR_SWITCH "1|" D_SENSOR_SWITCH "2|" D_SENSOR_SWITCH "3|" D_SENSOR_SWITCH "4|" D_SENSOR_SWITCH "5|" D_SENSOR_SWITCH "6|" D_SENSOR_SWITCH "7|" D_SENSOR_SWITCH "8|"
   D_SENSOR_BUTTON "1|" D_SENSOR_BUTTON "2|" D_SENSOR_BUTTON "3|" D_SENSOR_BUTTON "4|"
   D_SENSOR_RELAY "1|" D_SENSOR_RELAY "2|" D_SENSOR_RELAY "3|" D_SENSOR_RELAY "4|" D_SENSOR_RELAY "5|" D_SENSOR_RELAY "6|" D_SENSOR_RELAY "7|" D_SENSOR_RELAY "8|"
   D_SENSOR_RELAY "1i|" D_SENSOR_RELAY "2i|" D_SENSOR_RELAY "3i|" D_SENSOR_RELAY "4i|" D_SENSOR_RELAY "5i|" D_SENSOR_RELAY "6i|" D_SENSOR_RELAY "7i|" D_SENSOR_RELAY "8i|"
@@ -142,7 +149,8 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_SBR_TX "|" D_SENSOR_SBR_RX "|"
   D_SENSOR_SR04_TRIG "|" D_SENSOR_SR04_ECHO "|"
   D_SENSOR_SDM120_TX "|" D_SENSOR_SDM120_RX "|"
-  D_SENSOR_SDM630_TX "|" D_SENSOR_SDM630_RX;
+  D_SENSOR_SDM630_TX "|" D_SENSOR_SDM630_RX "|"
+  D_SENSOR_TM1638_CLK "|" D_SENSOR_TM1638_DIO "|" D_SENSOR_TM1638_STB;
 
 /********************************************************************************************/
 
@@ -155,7 +163,7 @@ enum SupportedModules {
   SONOFF_DUAL,
   SONOFF_POW,
   SONOFF_4CH,
-  S20,
+  SONOFF_S2X,
   SLAMPHER,
   SONOFF_TOUCH,
   SONOFF_LED,
@@ -221,7 +229,7 @@ const uint8_t kNiceList[MAXMODULE] PROGMEM = {
   SONOFF_4CHPRO,
   SONOFF_SV,
   SONOFF_DEV,
-  S20,
+  SONOFF_S2X,
   SLAMPHER,
   SONOFF_TOUCH,
   SONOFF_T11,
@@ -357,15 +365,15 @@ const mytmplt kModules[MAXMODULE] PROGMEM = {
      GPIO_REL4,        // GPIO15 Red Led and Relay 4 (0 = Off, 1 = On)
      0, 0
   },
-  { "S20 Socket",      // S20 Smart Socket (ESP8266)
+  { "Sonoff S2X",      // Sonoff S20, S22 and S26 Smart Socket (ESP8266)
      GPIO_KEY1,        // GPIO00 Button
      GPIO_USER,        // GPIO01 Serial RXD and Optional sensor
-     0,
+     GPIO_USER,        // GPIO02 Optional sensor
      GPIO_USER,        // GPIO03 Serial TXD and Optional sensor
      0, 0,
      0, 0, 0, 0, 0, 0, // Flash connection
      GPIO_REL1,        // GPIO12 Red Led and Relay (0 = Off, 1 = On)
-     GPIO_LED1_INV,    // GPIO13 Green Led (0 = On, 1 = Off)
+     GPIO_LED1_INV,    // GPIO13 Green/Blue Led (0 = On, 1 = Off)
      0, 0, 0, 0
   },
   { "Slampher",        // Slampher (ESP8266)

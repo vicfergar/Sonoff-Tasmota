@@ -25,7 +25,7 @@
     - Select IDE Tools - Flash Size: "1M (no SPIFFS)"
   ====================================================*/
 
-#define VERSION                0x06000001   // 6.0.0a
+#define VERSION                0x06000002   // 6.0.0b
 
 // Location specific includes
 #include <core_version.h>                   // Arduino_Esp8266 version information (ARDUINO_ESP8266_RELEASE and ARDUINO_ESP8266_RELEASE_2_3_0)
@@ -170,6 +170,7 @@ uint8_t multiwindow[MAX_KEYS] = { 0 };      // Max time between button presses t
 uint8_t multipress[MAX_KEYS] = { 0 };       // Number of button presses within multiwindow
 uint8_t lastwallswitch[MAX_SWITCHES];       // Last wall switch states
 uint8_t holdwallswitch[MAX_SWITCHES] = { 0 };  // Timer for wallswitch push button hold
+uint8_t virtualswitch[MAX_SWITCHES] = { 0 };   // Virtual switch states
 
 mytmplt my_module;                          // Active copy of Module name and GPIOs
 uint8_t pin[GPIO_MAX];                      // Possible pin configurations
@@ -184,6 +185,7 @@ uint8_t light_type = 0;                     // Light types
 bool pwm_present = false;                   // Any PWM channel configured with SetOption15 0
 boolean mdns_begun = false;
 uint8_t ntp_force_sync = 0;                 // Force NTP sync
+RulesBitfield rules_flag;
 
 char my_version[33];                        // Composed version string
 char my_hostname[33];                       // Composed Wifi hostname
@@ -393,6 +395,8 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
   uint16_t index;
   uint32_t address;
 
+  ShowFreeMem(PSTR("MqttDataHandler"));
+
   strncpy(topicBuf, topic, sizeof(topicBuf));
   for (i = 0; i < data_len; i++) {
     if (!isspace(data[i])) break;
@@ -577,7 +581,7 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
       XsnsCall(FUNC_COMMAND);
 //      if (!XsnsCall(FUNC_COMMAND)) type = NULL;
     }
-    else if ((CMND_SETOPTION == command_code) && ((index <= 28) || ((index > 31) && (index <= P_MAX_PARAM8 + 31)))) {
+    else if ((CMND_SETOPTION == command_code) && (index <= P_MAX_PARAM8 + 31)) {
       if (index <= 31) {
         ptype = 0;   // SetOption0 .. 31
       } else {
@@ -590,7 +594,7 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
             switch (index) {
               case 3:   // mqtt
               case 15:  // pwm_control
-              case 28:  // cover mode enabled
+              case 31:  // cover mode enabled
                 restart_flag = 2;
               case 0:   // save_state
               case 1:   // button_restrict
@@ -613,6 +617,10 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
 //              case 24:  // rules_once
 //              case 25:  // knx_enabled
               case 26:  // device_index_enable
+//              case 27:  // knx_enable_enhancement
+              case 28:  // rf_receive_decimal
+              case 29:  // ir_receive_decimal
+              case 30:  // hass_light
                 bitWrite(Settings.flag.data, index, payload);
             }
             if (12 == index) {  // stop_flash_rotate
@@ -620,11 +628,11 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
               SettingsSave(2);
             }
 #ifdef USE_HOME_ASSISTANT
-            if (19 == index) {  // hass_discovery
+            if ((19 == index) || (30 == index)) {  // hass_discovery or hass_light
               HAssDiscovery(1);
             }
 #endif  // USE_HOME_ASSISTANT
-            if (28 == index) { // cover_mode_enabled
+            if (31 == index) { // cover_mode_enabled
               SettingsSave(0);
             }
           }
@@ -803,8 +811,13 @@ void MqttDataHandler(char* topic, byte* data, unsigned int data_len)
     }
     else if ((CMND_COUNTER == command_code) && (index > 0) && (index <= MAX_COUNTERS)) {
       if ((data_len > 0) && (pin[GPIO_CNTR1 + index -1] < 99)) {
-        RtcSettings.pulse_counter[index -1] = payload16;
-        Settings.pulse_counter[index -1] = payload16;
+        if ((dataBuf[0] == '-') || (dataBuf[0] == '+')) {
+          RtcSettings.pulse_counter[index -1] += payload32;
+          Settings.pulse_counter[index -1] += payload32;
+        } else {
+          RtcSettings.pulse_counter[index -1] = payload32;
+          Settings.pulse_counter[index -1] = payload32;
+        }
       }
       snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_INDEX_LVALUE, command, index, RtcSettings.pulse_counter[index -1]);
     }
@@ -1147,8 +1160,8 @@ boolean SendKey(byte key, byte device, byte state)
   char *tmp = (key) ? Settings.switch_topic : Settings.button_topic;
   Format(key_topic, tmp, sizeof(key_topic));
   if (Settings.flag.mqtt_enabled && MqttIsConnected() && (strlen(key_topic) != 0) && strcmp(key_topic, "0")) {
-    if (!key && (device > devices_present)) device = 1;
-    GetTopic_P(stopic, CMND, key_topic, GetPowerDevice(scommand, device, sizeof(scommand), key));
+    if (!key && (device > devices_present)) device = 1;                                             // Only allow number of buttons up to number of devices
+    GetTopic_P(stopic, CMND, key_topic, GetPowerDevice(scommand, device, sizeof(scommand), key));   // cmnd/switchtopic/POWERx
     if (9 == state) {
       mqtt_data[0] = '\0';
     } else {
@@ -1422,6 +1435,7 @@ void ExecuteCommand(char *cmnd, int source)
   char *start;
   char *token;
 
+  ShowFreeMem(PSTR("ExecuteCommand"));
   ShowSource(source);
 
   token = strtok(cmnd, " ");
@@ -1592,7 +1606,11 @@ boolean MqttShowSensor()
   snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s{\"" D_JSON_TIME "\":\"%s\""), mqtt_data, GetDateAndTime(DT_LOCAL).c_str());
   int json_data_start = strlen(mqtt_data);
   for (byte i = 0; i < MAX_SWITCHES; i++) {
+#ifdef USE_TM1638
+    if ((pin[GPIO_SWT1 +i] < 99) || ((pin[GPIO_TM16CLK] < 99) && (pin[GPIO_TM16DIO] < 99) && (pin[GPIO_TM16STB] < 99))) {
+#else
     if (pin[GPIO_SWT1 +i] < 99) {
+#endif  // USE_TM1638
       boolean swm = ((FOLLOW_INV == Settings.switchmode[i]) || (PUSHBUTTON_INV == Settings.switchmode[i]) || (PUSHBUTTONHOLD_INV == Settings.switchmode[i]));
       snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"" D_JSON_SWITCH "%d\":\"%s\""), mqtt_data, i +1, GetStateText(swm ^ lastwallswitch[i]));
     }
@@ -1826,7 +1844,7 @@ void ButtonHandler()
  * Switch handler
 \*********************************************************************************************/
 
-void SwitchHandler()
+void SwitchHandler(byte mode)
 {
   uint8_t button = NOT_PRESSED;
   uint8_t switchflag;
@@ -1841,7 +1859,12 @@ void SwitchHandler()
         }
       }
 
-      button = digitalRead(pin[GPIO_SWT1 +i]);
+      if (mode) {
+        button = virtualswitch[i];
+      } else {
+        button = digitalRead(pin[GPIO_SWT1 +i]);
+      }
+
       if (button != lastwallswitch[i]) {
         switchflag = 3;
         switch (Settings.switchmode[i]) {
@@ -1983,7 +2006,7 @@ void StateLoop()
 \*-------------------------------------------------------------------------------------------*/
 
   ButtonHandler();
-  SwitchHandler();
+  SwitchHandler(0);
 
   XdrvCall(FUNC_EVERY_50_MSECOND);
   XsnsCall(FUNC_EVERY_50_MSECOND);

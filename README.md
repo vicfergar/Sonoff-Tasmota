@@ -13,7 +13,14 @@ If you like **Sonoff-Tasmota**, give it a star, or fork it and contribute!
 ### Development
 [![Build Status](https://img.shields.io/travis/arendst/Sonoff-Tasmota.svg)](https://travis-ci.org/arendst/Sonoff-Tasmota)
 
-Current version is **6.0.0a** - See [sonoff/_releasenotes.ino](https://github.com/arendst/Sonoff-Tasmota/blob/development/sonoff/_releasenotes.ino) for change information.
+Current version is **6.0.0b** - See [sonoff/_releasenotes.ino](https://github.com/arendst/Sonoff-Tasmota/blob/development/sonoff/_releasenotes.ino) for change information.
+
+### Disclaimer
+:warning: **DANGER OF ELECTROCUTION** :warning:
+
+A Sonoff device is not a toy. It uses Mains AC so there is a danger of electrocution if not installed properly. If you don't know how to install it, please call an electrician. Remember: _**SAFETY FIRST**_. It is not worth to risk yourself, your family and your home if you don't know exactly what you are doing. Never try to flash a Sonoff device while it is connected to MAINS AC.
+
+We don't take any responsibility nor liability for using this software nor for the installation or any tips, advice, videos, etc. given by any member of this site or any related site.
 
 ### Quick Install
 Download one of the released binaries from https://github.com/arendst/Sonoff-Tasmota/releases and flash it to your hardware as documented in the wiki.
@@ -45,8 +52,9 @@ The following devices are supported:
 - [iTead Sonoff Pow R2 with Energy Monitoring](https://www.itead.cc/sonoff-pow-r2.html)
 - [iTead Sonoff 4CH (R2)](https://www.itead.cc/smart-home/sonoff-4ch.html)
 - [iTead Sonoff 4CH Pro (R2)](https://www.itead.cc/smart-home/sonoff-4ch-pro.html)
-- [iTead S20 Smart Socket](https://www.itead.cc/smart-socket.html)
+- [iTead Sonoff S20 Smart Socket](https://www.itead.cc/smart-socket.html)
 - [Sonoff S22 Smart Socket](https://github.com/arendst/Sonoff-Tasmota/issues/627)
+- [iTead Sonoff S26 Smart Socket](https://www.itead.cc/sonoff-s26-wifi-smart-plug.html)
 - [iTead Sonoff S31 Smart Socket with Energy Monitoring](https://www.itead.cc/sonoff-s31.html)
 - [iTead Slampher](https://www.itead.cc/slampher.html)
 - [iTead Sonoff Touch](https://www.itead.cc/sonoff-touch.html)
@@ -175,7 +183,7 @@ People helping to keep the show on the road:
 - Pete Ba for more user friendly energy monitor calibration
 - Lobradov providing compile optimization tips
 - Flexiti for his initial timer implementation
-- reloxx13 for his [SonWeb](https://github.com/reloxx13/SonWEB) management tool
+- reloxx13 for his [TasmoAdmin](https://github.com/reloxx13/TasmoAdmin) management tool
 - Joachim Banzhaf for his TSL2561 library and driver
 - Gijs Noorlander for his MHZ19 and SenseAir drivers
 - Emontnemery for his HomeAssistant Discovery concept and many code tuning tips
