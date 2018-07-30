@@ -201,6 +201,7 @@ enum SupportedModules {
   SONOFF_POW_R2,
   SONOFF_IFAN02,
   BLITZWOLF_BWSHP2,
+  ROWENTA_FAN,
   MAXMODULE };
 
 /********************************************************************************************/
@@ -263,7 +264,8 @@ const uint8_t kNiceList[MAXMODULE] PROGMEM = {
   KMC_70011,
   AILIGHT,
   WEMOS,
-  WITTY
+  WITTY,
+  ROWENTA_FAN
 };
 
 // Default module settings
@@ -883,6 +885,23 @@ const mytmplt kModules[MAXMODULE] PROGMEM = {
      GPIO_KEY1,        // GPIO13 Button
      GPIO_HLW_CF1,     // GPIO14 BL0937 or HJL-01 CF1 voltage / current
      GPIO_REL1,        // GPIO15 Relay (0 = Off, 1 = On)
+     0, 0
+  },
+  { "Rowenta Fan",     // Rowenta Fan (ESP8266)
+     GPIO_USER,        // GPIO00 Button 0 on header (0 = On, 1 = Off)
+     GPIO_USER,        // GPIO01 Serial RXD and Optional sensor
+     GPIO_LED1_INV,    // GPIO02 Blue Led (1 = On, 0 = Off)
+     GPIO_USER,        // GPIO03 Serial TXD and Optional sensor
+     0,                // GPIO04 LOW Led and SPEED Button
+     0,                // GPIO05 MOSQUITO Led
+     0, 0, 0,          // Flash connection
+     GPIO_USER,        // GPIO09 Empty pad
+     GPIO_USER,        // GPIO10 Empty pad
+     0,                // Flash connection
+     0,                // GPIO12 HIGH Led and BOOST Button
+     0,                // GPIO13 BOOST Led and POWER Button
+     0,                // GPIO14 MEDIUM Leda and MOSQUITO Button
+     GPIO_USER,        // GPIO15 Empty pad
      0, 0
   }
 };
