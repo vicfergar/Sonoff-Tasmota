@@ -57,7 +57,6 @@ typedef enum
 } RowFanLedsTypes;
 
 uint8_t rowfan_type;
-bool rowfan_publish;
 
 uint8_t rowfan_leds_pinout[] = { ROWFAN_LED_LOW, ROWFAN_LED_MEDIUM, ROWFAN_LED_HIGH, ROWFAN_LED_BOOST, ROWFAN_LED_MOSQUITO };
 RowFanStates rowfan_state;
@@ -96,9 +95,9 @@ void rowfan_update_leds_state()
   }
 }
 
-void rowfan_refresh_state()
+bool rowfan_refresh_state()
 {
-  rowfan_publish = rowfan_state == RowFanStates::UNDEFINED;
+  RowFanStates last_state = rowfan_state;
 
   if (!rowfan_leds_readings[RowFanLedsTypes::SPEED_MOSQUITO]) {
     rowfan_state = MOSQUITO;
@@ -113,6 +112,9 @@ void rowfan_refresh_state()
   } else {
     rowfan_state = OFF;
   }
+
+  return rowfan_desired_state == RowFanStates::UNDEFINED &&
+         rowfan_state != last_state;
 }
 
 void rowfan_control_state()
@@ -150,7 +152,6 @@ void rowfan_btn_press(int pin)
 void RowFanInit()
 {
   rowfan_type = ROWENTA_FAN == Settings.module;
-  rowfan_publish = false;
 
   if (rowfan_type) {
     rowfan_init();
@@ -174,16 +175,10 @@ void RowFanLoop()
   rowfan_update_leds_state();
   
   if (rowfan_valid_leds_readings) {
-    rowfan_refresh_state();
-    rowfan_control_state();
-  }
-
-  if (rowfan_publish) {
-    rowfan_publish = false;
-
-    if (rowfan_desired_state == RowFanStates::UNDEFINED) {
+    if (rowfan_refresh_state()) {
       RowFanMqttPublish(rowfan_state);
     }
+    rowfan_control_state();
   }
 }
 
