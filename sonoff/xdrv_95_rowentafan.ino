@@ -65,6 +65,7 @@ bool rowfan_leds_readings[RowFanLedsTypes::LAST];
 bool rowfan_valid_leds_readings;
 uint8_t rowfan_counter_leds_readings = 0;
 int rowfan_active_btn_pin = -1;
+bool rowfan_state_changed = false;
 
 void rowfan_init()
 {
@@ -175,7 +176,10 @@ void RowFanLoop()
   rowfan_update_leds_state();
   
   if (rowfan_valid_leds_readings) {
-    if (rowfan_refresh_state()) {
+
+    rowfan_state_changed |= rowfan_refresh_state();
+    if (mqtt_connected && rowfan_state_changed) {
+      rowfan_state_changed = false;
       RowFanMqttPublish(rowfan_state);
     }
     rowfan_control_state();
