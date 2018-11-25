@@ -34,6 +34,7 @@
 #define D_CMND_OPENTIME "shutteropenduration"
 #define D_CMND_CLOSETIME "shuttercloseduration"
 #define D_CMND_SHUTTERRELAY "shutterrelay"
+#define D_CMND_CALIBRATIONMATIX "shuttercalibration"
 #define D_OPEN "Open"
 #define D_CLOSE "Close"
 #define D_SHUTTER "SHUTTER"
@@ -41,6 +42,8 @@
 #define D_CMND_SET50PERCENT "shutter50percent"
 #define D_CMND_SHUTTERSETCLOSE "shuttersetclose"
 #define D_CMND_SHUTTERINVERT "shutterinvert"
+#define D_CMND_INTERLOCKBUCKETSIZE "bucketsize"
+#define D_DOMOTICZ_SHUTTER "Shutter"
 //end
 
 /*************************** ATTENTION *******************************\
@@ -51,7 +54,7 @@
  * Use online command StateText to translate ON, OFF, HOLD and TOGGLE.
  * Use online command Prefix to translate cmnd, stat and tele.
  *
- * Updated until v6.0.0a
+ * Updated until v6.2.1.11
 \*********************************************************************/
 
 #define LANGUAGE_MODULE_NAME         // Enable to display "Module Generic" (ie Spanish), Disable to display "Generic Module" (ie English)
@@ -83,10 +86,12 @@
 #define D_BLINKOFF "BlinkOff"
 #define D_BOOT_COUNT "Conteo Reinicios"
 #define D_BRIGHTLIGHT "Brillante"
+#define D_BSSID "BSSId"
 #define D_BUTTON "Botón"
 #define D_BY "por"                    // Written by me
 #define D_BYTES "Bytes"
 #define D_CELSIUS "Celsius"
+#define D_CHANNEL "Canal"
 #define D_CO2 "CO2"
 #define D_CODE "código"                // Button code
 #define D_COLDLIGHT "Fría"
@@ -184,9 +189,18 @@
 #define D_USER "Usuario"
 #define D_UTC_TIME "UTC"
 #define D_UV_INDEX "Índice UV"
+#define D_UV_INDEX_1 "Bajo"
+#define D_UV_INDEX_2 "Medio"
+#define D_UV_INDEX_3 "Alto"
+#define D_UV_INDEX_4 "Peligroso"
+#define D_UV_INDEX_5 "Quemaduras 1 a 2 grad"
+#define D_UV_INDEX_6 "Quemaduras 3 grad"
+#define D_UV_INDEX_7 "Fuera de Rango"
 #define D_UV_LEVEL "Nivel UV"
+#define D_UV_POWER "UV Power"
 #define D_VERSION "Versión"
 #define D_VOLTAGE "Tensión"
+#define D_WEIGHT "Peso"
 #define D_WARMLIGHT "Cálida"
 #define D_WEB_SERVER "Servidor Web"
 
@@ -229,6 +243,7 @@
 #define D_ERASED_SECTOR "Sector borrado"
 
 // xdrv_02_webserver.ino
+#define D_NOSCRIPT "Habilitar JavaScript para usar Tasmota"
 #define D_MINIMAL_FIRMWARE_PLEASE_UPGRADE "Firmware MÍNIMO - actualice por favor"
 #define D_WEBSERVER_ACTIVE_ON "Servidor web activo en"
 #define D_WITH_IP_ADDRESS "con dirección IP"
@@ -459,6 +474,37 @@
 #define D_ENVIRONMENTAL_CONCENTRATION "PM"     // Environmetal Particle Matter
 #define D_PARTICALS_BEYOND "Partículas"
 
+// xsns_32_mpu6050.ino
+#define D_AX_AXIS "Accel. X-Axis"
+#define D_AY_AXIS "Accel. Y-Axis"
+#define D_AZ_AXIS "Accel. Z-Axis"
+#define D_GX_AXIS "Gyro X-Axis"
+#define D_GY_AXIS "Gyro Y-Axis"
+#define D_GZ_AXIS "Gyro Z-Axis"
+
+// xsns_34_hx711.ino
+#define D_HX_CAL_REMOVE "Remover Peso"
+#define D_HX_CAL_REFERENCE "Poner Peso de Referencia"
+#define D_HX_CAL_DONE "Calibrado"
+#define D_HX_CAL_FAIL "Falló Calibración"
+#define D_RESET_HX711 "Restableces Escala"
+#define D_CONFIGURE_HX711 "Configurar Escala"
+#define D_HX711_PARAMETERS "Parámetros de Escala"
+#define D_ITEM_WEIGHT "Peso"
+#define D_REFERENCE_WEIGHT "Peso de Referencia"
+#define D_CALIBRATE "Calibrar"
+#define D_CALIBRATION "Calibración"
+
+//xsns_35_tx20.ino
+#define D_TX20_WIND_DIRECTION "Dirección del Viento"
+#define D_TX20_WIND_SPEED "Vel. del Viento"
+#define D_TX20_WIND_SPEED_AVG "Vel. Prom. del Viento"
+#define D_TX20_WIND_SPEED_MAX "Vel. Max. del Viento"
+#define D_TX20_NORTH "N"
+#define D_TX20_EAST "E"
+#define D_TX20_SOUTH "S"
+#define D_TX20_WEST "O"
+
 // sonoff_template.h
 #define D_SENSOR_NONE     "Ninguno"
 #define D_SENSOR_DHT11    "DHT11"
@@ -468,25 +514,29 @@
 #define D_SENSOR_I2C_SCL  "I2C SCL"
 #define D_SENSOR_I2C_SDA  "I2C SDA"
 #define D_SENSOR_WS2812   "WS2812"
+#define D_SENSOR_DFR562   "MP3 Player"
 #define D_SENSOR_IRSEND   "IR TX"
 #define D_SENSOR_SWITCH   "Llave"   // Suffix "1"
 #define D_SENSOR_BUTTON   "Botón"   // Suffix "1"
 #define D_SENSOR_RELAY    "Relé"    // Suffix "1i"
 #define D_SENSOR_LED      "Led"      // Suffix "1i"
 #define D_SENSOR_PWM      "PWM"      // Suffix "1"
-#define D_SENSOR_COUNTER  "Counter"  // Suffix "1"
+#define D_SENSOR_COUNTER  "Contador"  // Suffix "1"
 #define D_SENSOR_IRRECV   "IR RX"
 #define D_SENSOR_MHZ_RX   "MHZ Rx"
 #define D_SENSOR_MHZ_TX   "MHZ Tx"
-#define D_SENSOR_PZEM_RX  "PZEM Rx"
-#define D_SENSOR_PZEM_TX  "PZEM Tx"
+#define D_SENSOR_PZEM004_RX  "PZEM004 Rx"
+#define D_SENSOR_PZEM016_RX  "PZEM016 Rx"
+#define D_SENSOR_PZEM017_RX  "PZEM017 Rx"
+#define D_SENSOR_PZEM0XX_TX  "PZEM0XX Tx"
 #define D_SENSOR_SAIR_RX  "SAir Rx"
 #define D_SENSOR_SAIR_TX  "SAir Tx"
 #define D_SENSOR_SPI_CS   "SPI CS"
 #define D_SENSOR_SPI_DC   "SPI DC"
 #define D_SENSOR_BACKLIGHT "BkLight"
 #define D_SENSOR_PMS5003  "PMS5003"
-#define D_SENSOR_SDS0X1   "SDS0X1"
+#define D_SENSOR_SDS0X1_RX "SDS0X1 Rx"
+#define D_SENSOR_SDS0X1_TX "SDS0X1 Tx"
 #define D_SENSOR_SBR_RX   "SerBr Rx"
 #define D_SENSOR_SBR_TX   "SerBr Tx"
 #define D_SENSOR_SR04_TRIG "SR04 Tri"
@@ -498,12 +548,22 @@
 #define D_SENSOR_TM1638_CLK "TM16 CLK"
 #define D_SENSOR_TM1638_DIO "TM16 DIO"
 #define D_SENSOR_TM1638_STB "TM16 STB"
+#define D_SENSOR_HX711_SCK "HX711 SCK"
+#define D_SENSOR_HX711_DAT "HX711 DAT"
+#define D_SENSOR_TX20_TX "TX20"
+#define D_SENSOR_RFSEND "RFSend"
+#define D_SENSOR_RFRECV "RFrecv"
+#define D_SENSOR_TUYA_TX "Tuya Tx"
+#define D_SENSOR_TUYA_RX "Tuya Rx"
 
 // Units
 #define D_UNIT_AMPERE "A"
 #define D_UNIT_CENTIMETER "cm"
 #define D_UNIT_HERTZ "Hz"
 #define D_UNIT_HOUR "Hr"
+#define D_UNIT_INCREMENTS "inc"
+#define D_UNIT_KILOGRAM "kg"
+#define D_UNIT_KILOMETER_PER_HOUR "km/h"  // or "km/h"
 #define D_UNIT_KILOOHM "kOhm"
 #define D_UNIT_KILOWATTHOUR "kWh"
 #define D_UNIT_LUX "lx"
@@ -524,6 +584,7 @@
 #define D_UNIT_VOLT "V"
 #define D_UNIT_WATT "W"
 #define D_UNIT_WATTHOUR "Wh"
+#define D_UNIT_WATT_METER_QUADRAT "W/m²"
 
 // Log message prefix
 #define D_LOG_APPLICATION "APP: "  // Application

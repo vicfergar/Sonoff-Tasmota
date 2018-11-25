@@ -82,6 +82,10 @@ String GetResetReason()
   }
 }
 
+boolean OsWatchBlockedLoop()
+{
+  return oswatch_blocked_loop;
+}
 /*********************************************************************************************\
  * Miscellaneous
 \*********************************************************************************************/
@@ -139,7 +143,7 @@ char* subStr(char* dest, char* str, const char *delim, int index)
   int i;
 
   // Since strtok consumes the first arg, make a copy
-  strncpy(dest, str, strlen(str));
+  strncpy(dest, str, strlen(str)+1);
   for (i = 1, act = dest; i <= index; i++, act = NULL) {
     sub = strtok_r(act, delim, &ptr);
     if (sub == NULL) break;
@@ -153,7 +157,7 @@ double CharToDouble(char *str)
   // simple ascii to double, because atof or strtod are too large
   char strbuf[24];
 
-  strcpy(strbuf, str);
+  strlcpy(strbuf, str, sizeof(strbuf));
   char *pt;
   double left = atoi(strbuf);
   double right = 0;
@@ -179,9 +183,25 @@ double CharToDouble(char *str)
   return result;
 }
 
+int TextToInt(char *str)
+{
+  char *p;
+  uint8_t radix = 10;
+  if ('#' == str[0]) {
+    radix = 16;
+    str++;
+  }
+  return strtol(str, &p, radix);
+}
+
 char* dtostrfd(double number, unsigned char prec, char *s)
 {
-  return dtostrf(number, 1, prec, s);
+  if ((isnan(number)) || (isinf(number))) {  // Fix for JSON output (https://stackoverflow.com/questions/1423081/json-left-out-infinity-and-nan-json-status-in-ecmascript)
+    strcpy(s, "null");
+    return s;
+  } else {
+    return dtostrf(number, 1, prec, s);
+  }
 }
 
 char* Unescape(char* buffer, uint16_t* size)
@@ -226,6 +246,22 @@ char* Unescape(char* buffer, uint16_t* size)
   }
   *size = end_size;
   return buffer;
+}
+
+char* RemoveSpace(char* p)
+{
+  char* write = p;
+  char* read = p;
+  char ch = '.';
+
+  while (ch != '\0') {
+    ch = *read++;
+    if (!isspace(ch)) {
+      *write++ = ch;
+    }
+  }
+  *write = '\0';
+  return p;
 }
 
 char* UpperCase(char* dest, const char* source)
@@ -296,6 +332,31 @@ char* NoAlNumToUnderscore(char* dest, const char* source)
     *write++ = (isalnum(ch) || ('\0' == ch)) ? ch : '_';
   }
   return dest;
+}
+
+void SetShortcut(char* str, uint8_t action)
+{
+  if ('\0' != str[0]) {     // There must be at least one character in the buffer
+    str[0] = '0' + action;  // SC_CLEAR, SC_DEFAULT, SC_USER
+    str[1] = '\0';
+  }
+}
+
+uint8_t Shortcut(const char* str)
+{
+  uint8_t result = 10;
+
+  if ('\0' == str[1]) {    // Only allow single character input for shortcut
+    if (('"' == str[0]) || ('0' == str[0])) {
+      result = SC_CLEAR;
+    } else {
+      result = atoi(str);  // 1 = SC_DEFAULT, 2 = SC_USER
+      if (0 == result) {
+        result = 10;
+      }
+    }
+  }
+  return result;
 }
 
 boolean ParseIp(uint32_t* addr, const char* str)
@@ -454,6 +515,32 @@ double FastPrecisePow(double a, double b)
   return r * u.d;
 }
 
+uint32_t SqrtInt(uint32_t num)
+{
+  if (num <= 1) {
+    return num;
+  }
+
+  uint32_t x = num / 2;
+  uint32_t y;
+  do {
+    y = (x + num / x) / 2;
+    if (y >= x) {
+      return x;
+    }
+    x = y;
+  } while (true);
+}
+
+uint32_t RoundSqrtInt(uint32_t num)
+{
+  uint32_t s = SqrtInt(4 * num);
+  if (s & 1) {
+    s++;
+  }
+  return s / 2;
+}
+
 char* GetTextIndexed(char* destination, size_t destination_size, uint16_t index, const char* haystack)
 {
   // Returns empty string if not found
@@ -521,13 +608,13 @@ int GetStateNumber(char *state_text)
   char command[CMDSZ];
   int state_number = -1;
 
-  if ((GetCommandCode(command, sizeof(command), state_text, kOptionOff) >= 0) || !strcasecmp(state_text, Settings.state_text[0])) {
+  if (GetCommandCode(command, sizeof(command), state_text, kOptionOff) >= 0) {
     state_number = 0;
   }
-  else if ((GetCommandCode(command, sizeof(command), state_text, kOptionOn) >= 0) || !strcasecmp(state_text, Settings.state_text[1])) {
+  else if (GetCommandCode(command, sizeof(command), state_text, kOptionOn) >= 0) {
     state_number = 1;
   }
-  else if ((GetCommandCode(command, sizeof(command), state_text, kOptionToggle) >= 0) || !strcasecmp(state_text, Settings.state_text[2])) {
+  else if (GetCommandCode(command, sizeof(command), state_text, kOptionToggle) >= 0) {
     state_number = 2;
   }
   else if (GetCommandCode(command, sizeof(command), state_text, kOptionBlink) >= 0) {
@@ -548,10 +635,6 @@ boolean GetUsedInModule(byte val, uint8_t *arr)
   if (GPIO_I2C_SCL == val) { return true; }
   if (GPIO_I2C_SDA == val) { return true; }
 #endif
-#ifndef USE_SR04
-  if (GPIO_SR04_TRIG == val) { return true; }
-  if (GPIO_SR04_ECHO == val) { return true; }
-#endif
 #ifndef USE_WS2812
   if (GPIO_WS2812 == val) { return true; }
 #endif
@@ -565,10 +648,22 @@ boolean GetUsedInModule(byte val, uint8_t *arr)
   if (GPIO_MHZ_TXD == val) { return true; }
   if (GPIO_MHZ_RXD == val) { return true; }
 #endif
+
+  int pzem = 3;
 #ifndef USE_PZEM004T
-  if (GPIO_PZEM_TX == val) { return true; }
-  if (GPIO_PZEM_RX == val) { return true; }
+  pzem--;
+  if (GPIO_PZEM004_RX == val) { return true; }
 #endif
+#ifndef USE_PZEM_AC
+  pzem--;
+  if (GPIO_PZEM016_RX == val) { return true; }
+#endif
+#ifndef USE_PZEM_DC
+  pzem--;
+  if (GPIO_PZEM017_RX == val) { return true; }
+#endif
+  if (!pzem && (GPIO_PZEM0XX_TX == val)) { return true; }
+
 #ifndef USE_SENSEAIR
   if (GPIO_SAIR_TX == val) { return true; }
   if (GPIO_SAIR_RX == val) { return true; }
@@ -584,7 +679,8 @@ boolean GetUsedInModule(byte val, uint8_t *arr)
   if (GPIO_PMS5003 == val) { return true; }
 #endif
 #ifndef USE_NOVA_SDS
-  if (GPIO_SDS0X1 == val) { return true; }
+  if (GPIO_SDS0X1_TX == val) { return true; }
+  if (GPIO_SDS0X1_RX == val) { return true; }
 #endif
 #ifndef USE_SERIAL_BRIDGE
   if (GPIO_SBR_TX == val) { return true; }
@@ -607,6 +703,18 @@ boolean GetUsedInModule(byte val, uint8_t *arr)
   if (GPIO_TM16DIO == val) { return true; }
   if (GPIO_TM16STB == val) { return true; }
 #endif
+#ifndef USE_HX711
+  if (GPIO_HX711_SCK == val) { return true; }
+  if (GPIO_HX711_DAT == val) { return true; }
+#endif
+#ifndef USE_TX20_WIND_SENSOR
+  if (GPIO_TX20_TXD_BLACK == val) { return true; }
+#endif
+#ifndef USE_RC_SWITCH
+  if (GPIO_RFSEND == val) { return true; }
+  if (GPIO_RFRECV == val) { return true; }
+#endif
+
   if ((val >= GPIO_REL1) && (val < GPIO_REL1 + MAX_RELAYS)) {
     offset = (GPIO_REL1_INV - GPIO_REL1);
   }
@@ -659,6 +767,23 @@ void ClaimSerial()
   Settings.baudrate = baudrate / 1200;
 }
 
+void SerialSendRaw(char *codes)
+{
+  char *p;
+  char stemp[3];
+  uint8_t code;
+
+  int size = strlen(codes);
+
+  while (size > 0) {
+    snprintf(stemp, sizeof(stemp), codes);
+    code = strtol(stemp, &p, 16);
+    Serial.write(code);
+    size -= 2;
+    codes += 2;
+  }
+}
+
 uint32_t GetHash(const char *buffer, size_t size)
 {
   uint32_t hash = 0;
@@ -675,6 +800,78 @@ void ShowSource(int source)
     snprintf_P(log_data, sizeof(log_data), PSTR("SRC: %s"), GetTextIndexed(stemp1, sizeof(stemp1), source, kCommandSource));
     AddLog(LOG_LEVEL_DEBUG);
   }
+}
+
+uint8_t ValidGPIO(uint8_t pin, uint8_t gpio)
+{
+  uint8_t result = gpio;
+  if ((WEMOS == Settings.module) && (!Settings.flag3.user_esp8285_enable)) {
+    if ((pin == 9) || (pin == 10)) { result = GPIO_NONE; }  // Disable possible flash GPIO9 and GPIO10
+  }
+  return result;
+}
+
+/*********************************************************************************************\
+ * Sleep aware time scheduler functions borrowed from ESPEasy
+\*********************************************************************************************/
+
+long TimeDifference(unsigned long prev, unsigned long next)
+{
+  // Return the time difference as a signed value, taking into account the timers may overflow.
+  // Returned timediff is between -24.9 days and +24.9 days.
+  // Returned value is positive when "next" is after "prev"
+  long signed_diff = 0;
+  // To cast a value to a signed long, the difference may not exceed half 0xffffffffUL (= 4294967294)
+  const unsigned long half_max_unsigned_long = 2147483647u;  // = 2^31 -1
+  if (next >= prev) {
+    const unsigned long diff = next - prev;
+    if (diff <= half_max_unsigned_long) {                    // Normal situation, just return the difference.
+      signed_diff = static_cast<long>(diff);                 // Difference is a positive value.
+    } else {
+      // prev has overflow, return a negative difference value
+      signed_diff = static_cast<long>((0xffffffffUL - next) + prev + 1u);
+      signed_diff = -1 * signed_diff;
+    }
+  } else {
+    // next < prev
+    const unsigned long diff = prev - next;
+    if (diff <= half_max_unsigned_long) {                    // Normal situation, return a negative difference value
+      signed_diff = static_cast<long>(diff);
+      signed_diff = -1 * signed_diff;
+    } else {
+      // next has overflow, return a positive difference value
+      signed_diff = static_cast<long>((0xffffffffUL - prev) + next + 1u);
+    }
+  }
+  return signed_diff;
+}
+
+long TimePassedSince(unsigned long timestamp)
+{
+  // Compute the number of milliSeconds passed since timestamp given.
+  // Note: value can be negative if the timestamp has not yet been reached.
+  return TimeDifference(timestamp, millis());
+}
+
+bool TimeReached(unsigned long timer)
+{
+  // Check if a certain timeout has been reached.
+  const long passed = TimePassedSince(timer);
+  return (passed >= 0);
+}
+
+void SetNextTimeInterval(unsigned long& timer, const unsigned long step)
+{
+  timer += step;
+  const long passed = TimePassedSince(timer);
+  if (passed < 0) { return; }   // Event has not yet happened, which is fine.
+  if (static_cast<unsigned long>(passed) > step) {
+    // No need to keep running behind, start again.
+    timer = millis() + step;
+    return;
+  }
+  // Try to get in sync again.
+  timer = millis() + (step - passed);
 }
 
 /*********************************************************************************************\
@@ -718,7 +915,7 @@ void GetFeatures()
 #if (MQTT_LIBRARY_TYPE == MQTT_TASMOTAMQTT)
   feature_drv1 |= 0x00000800;  // xdrv_01_mqtt.ino
 #endif
-#if (MQTT_LIBRARY_TYPE == MQTT_ESPMQTTARDUINO)
+#if (MQTT_LIBRARY_TYPE == MQTT_ESPMQTTARDUINO)      // Obsolete since 6.2.1.11
   feature_drv1 |= 0x00001000;  // xdrv_01_mqtt.ino
 #endif
 #ifdef MQTT_HOST_DISCOVERY
@@ -746,7 +943,7 @@ void GetFeatures()
   feature_drv1 |= 0x00100000;  // xdrv_07_domoticz.ino
 #endif
 #ifdef USE_DISPLAY
-  feature_drv1 |= 0x00200000;  // xdrv_98_display.ino
+  feature_drv1 |= 0x00200000;  // xdrv_13_display.ino
 #endif
 #ifdef USE_HOME_ASSISTANT
   feature_drv1 |= 0x00400000;  // xdrv_12_home_assistant.ino
@@ -775,6 +972,9 @@ void GetFeatures()
 #ifdef USE_SMARTCONFIG
   feature_drv1 |= 0x40000000;  // support.ino
 #endif
+#if (MQTT_LIBRARY_TYPE == MQTT_ARDUINOMQTT)
+  feature_drv1 |= 0x80000000;  // xdrv_01_mqtt.ino
+#endif
 
 /*********************************************************************************************/
 
@@ -786,7 +986,7 @@ void GetFeatures()
 #ifdef BE_MINIMAL
   feature_drv2 |= 0x00000002;  // user_config(_override).h
 #endif
-#ifdef USE_ALL_SENSORS
+#ifdef USE_SENSORS
   feature_drv2 |= 0x00000004;  // user_config(_override).h
 #endif
 #ifdef USE_CLASSIC
@@ -795,8 +995,54 @@ void GetFeatures()
 #ifdef USE_KNX_NO_EMULATION
   feature_drv2 |= 0x00000010;  // user_config(_override).h
 #endif
+#ifdef USE_DISPLAY_MODES1TO5
+  feature_drv2 |= 0x00000020;  // xdrv_13_display.ino
+#endif
+#ifdef USE_DISPLAY_GRAPH
+  feature_drv2 |= 0x00000040;  // xdrv_13_display.ino
+#endif
+#ifdef USE_DISPLAY_LCD
+  feature_drv2 |= 0x00000080;  // xdsp_01_lcd.ino
+#endif
+#ifdef USE_DISPLAY_SSD1306
+  feature_drv2 |= 0x00000100;  // xdsp_02_ssd1306.ino
+#endif
+#ifdef USE_DISPLAY_MATRIX
+  feature_drv2 |= 0x00000200;  // xdsp_03_matrix.ino
+#endif
+#ifdef USE_DISPLAY_ILI9341
+  feature_drv2 |= 0x00000400;  // xdsp_04_ili9341.ino
+#endif
+#ifdef USE_DISPLAY_EPAPER
+  feature_drv2 |= 0x00000800;  // xdsp_05_epaper.ino
+#endif
+#ifdef USE_DISPLAY_SH1106
+  feature_drv2 |= 0x00001000;  // xdsp_06_sh1106.ino
+#endif
+#ifdef USE_MP3_PLAYER
+  feature_drv2 |= 0x00002000;  // xdrv_14_mp3.ino
+#endif
+#ifdef USE_PCA9685
+  feature_drv2 |= 0x00004000;  // xdrv_15_pca9685.ino
+#endif
+#ifdef USE_TUYA_DIMMER
+  feature_drv2 |= 0x00008000;  // xdrv_16_tuyadimmer.ino
+#endif
+#ifdef USE_RC_SWITCH
+  feature_drv2 |= 0x00010000;  // xdrv_17_rcswitch.ino
+#endif
 
 
+
+#ifdef NO_EXTRA_4K_HEAP
+  feature_drv2 |= 0x00800000;  // sonoff_post.h
+#endif
+#ifdef VTABLES_IN_IRAM
+  feature_drv2 |= 0x01000000;  // platformio.ini
+#endif
+#ifdef VTABLES_IN_DRAM
+  feature_drv2 |= 0x02000000;  // platformio.ini
+#endif
 #ifdef VTABLES_IN_FLASH
   feature_drv2 |= 0x04000000;  // platformio.ini
 #endif
@@ -829,7 +1075,7 @@ void GetFeatures()
   feature_sns1 |= 0x00000004;  // xdrv_03_energy.ino
 #endif
 #ifdef USE_PZEM004T
-  feature_sns1 |= 0x00000008;  // xdrv_03_energy.ino
+  feature_sns1 |= 0x00000008;  // xnrg_03_pzem004t.ino
 #endif
 #ifdef USE_DS18B20
   feature_sns1 |= 0x00000010;  // xsns_05_ds18b20.ino
@@ -919,6 +1165,52 @@ void GetFeatures()
 /*********************************************************************************************/
 
   feature_sns2 = 0x00000000;
+
+#ifdef USE_MCP230xx
+  feature_sns2 |= 0x00000001;  // xsns_29_mcp230xx.ino
+#endif
+#ifdef USE_MPR121
+  feature_sns2 |= 0x00000002;  // xsns_30_mpr121.ino
+#endif
+#ifdef USE_CCS811
+  feature_sns2 |= 0x00000004;  // xsns_31_ccs811.ino
+#endif
+#ifdef USE_MPU6050
+  feature_sns2 |= 0x00000008;  // xsns_32_mpu6050.ino
+#endif
+#ifdef USE_MCP230xx_OUTPUT
+  feature_sns2 |= 0x00000010;  // xsns_29_mcp230xx.ino
+#endif
+#ifdef USE_MCP230xx_DISPLAYOUTPUT
+  feature_sns2 |= 0x00000020;  // xsns_29_mcp230xx.ino
+#endif
+#ifdef USE_HLW8012
+  feature_sns2 |= 0x00000040;  // xnrg_01_hlw8012.ino
+#endif
+#ifdef USE_CSE7766
+  feature_sns2 |= 0x00000080;  // xnrg_02_cse7766.ino
+#endif
+#ifdef USE_MCP39F501
+  feature_sns2 |= 0x00000100;  // xnrg_04_mcp39f501.ino
+#endif
+#ifdef USE_PZEM_AC
+  feature_sns2 |= 0x00000200;  // xnrg_05_pzem_ac.ino
+#endif
+#ifdef USE_DS3231
+  feature_sns2 |= 0x00000400;  // xsns_33_ds3231.ino
+#endif
+#ifdef USE_HX711
+  feature_sns2 |= 0x00000800;  // xsns_34_hx711.ino
+#endif
+#ifdef USE_PZEM_DC
+  feature_sns2 |= 0x00001000;  // xnrg_06_pzem_dc.ino
+#endif
+#ifdef USE_TX20_WIND_SENSOR
+  feature_sns2 |= 0x00002000;  // xsns_35_tx20.ino
+#endif
+
+
+
 }
 
 /*********************************************************************************************\
@@ -1055,6 +1347,31 @@ void WifiConfig(uint8_t type)
   }
 }
 
+void WiFiSetSleepMode()
+{
+/* Excerpt from the esp8266 non os sdk api reference (v2.2.1):
+ * Sets sleep type for power saving. Set WIFI_NONE_SLEEP to disable power saving.
+ * - Default mode: WIFI_MODEM_SLEEP.
+ * - In order to lower the power comsumption, ESP8266 changes the TCP timer
+ *   tick from 250ms to 3s in WIFI_LIGHT_SLEEP mode, which leads to increased timeout for
+ *   TCP timer. Therefore, the WIFI_MODEM_SLEEP or deep-sleep mode should be used
+ *   where there is a requirement for the accurancy of the TCP timer.
+ *
+ * Sleep is disabled in core 2.4.1 and 2.4.2 as there are bugs in their SDKs
+ * See https://github.com/arendst/Sonoff-Tasmota/issues/2559
+ */
+
+// Sleep explanation: https://github.com/esp8266/Arduino/blob/3f0c601cfe81439ce17e9bd5d28994a7ed144482/libraries/ESP8266WiFi/src/ESP8266WiFiGeneric.cpp#L255
+#if defined(ARDUINO_ESP8266_RELEASE_2_4_1) || defined(ARDUINO_ESP8266_RELEASE_2_4_2)
+#else  // Enabled in 2.3.0, 2.4.0 and stage
+  if (sleep) {
+    WiFi.setSleepMode(WIFI_LIGHT_SLEEP);  // Allow light sleep during idle times
+  } else {
+    WiFi.setSleepMode(WIFI_MODEM_SLEEP);  // Disable sleep (Esp8288/Arduino core and sdk default)
+  }
+#endif
+}
+
 void WifiBegin(uint8_t flag)
 {
   const char kWifiPhyMode[] = " BGN";
@@ -1068,12 +1385,11 @@ void WifiBegin(uint8_t flag)
   WiFi.mode(WIFI_OFF);      // See https://github.com/esp8266/Arduino/issues/2186
 #endif
 
+  WiFi.persistent(false);   // Solve possible wifi init errors (re-add at 6.2.1.16 #4044, #4083)
   WiFi.disconnect(true);    // Delete SDK wifi config
   delay(200);
   WiFi.mode(WIFI_STA);      // Disable AP mode
-#ifndef ARDUINO_ESP8266_RELEASE_2_4_1     // See https://github.com/arendst/Sonoff-Tasmota/issues/2559 - Sleep bug
-  if (Settings.sleep) { WiFi.setSleepMode(WIFI_LIGHT_SLEEP); }  // Allow light sleep during idle times
-#endif
+  WiFiSetSleepMode();
 //  if (WiFi.getPhyMode() != WIFI_PHY_MODE_11N) { WiFi.setPhyMode(WIFI_PHY_MODE_11N); }
   if (!WiFi.getAutoConnect()) { WiFi.setAutoConnect(true); }
 //  WiFi.setAutoReconnect(true);
@@ -1096,7 +1412,7 @@ void WifiBegin(uint8_t flag)
   AddLog(LOG_LEVEL_INFO);
 }
 
-void WifiState(uint8_t state)
+void WifiSetState(uint8_t state)
 {
   if (state == global_state.wifi_down) {
     if (state) {
@@ -1111,7 +1427,7 @@ void WifiState(uint8_t state)
 void WifiCheckIp()
 {
   if ((WL_CONNECTED == WiFi.status()) && (static_cast<uint32_t>(WiFi.localIP()) != 0)) {
-    WifiState(1);
+    WifiSetState(1);
     wifi_counter = WIFI_CHECK_SEC;
     wifi_retry = wifi_retry_init;
     AddLog_P((wifi_status != WL_CONNECTED) ? LOG_LEVEL_INFO : LOG_LEVEL_DEBUG_MORE, S_LOG_WIFI, PSTR(D_CONNECTED));
@@ -1123,7 +1439,7 @@ void WifiCheckIp()
     }
     wifi_status = WL_CONNECTED;
   } else {
-    WifiState(0);
+    WifiSetState(0);
     uint8_t wifi_config_tool = Settings.sta_config;
     wifi_status = WiFi.status();
     switch (wifi_status) {
@@ -1250,26 +1566,36 @@ void WifiCheck(uint8_t param)
         WifiCheckIp();
       }
       if ((WL_CONNECTED == WiFi.status()) && (static_cast<uint32_t>(WiFi.localIP()) != 0) && !wifi_config_type) {
-        WifiState(1);
+        WifiSetState(1);
 #ifdef BE_MINIMAL
         if (1 == RtcSettings.ota_loader) {
           RtcSettings.ota_loader = 0;
           ota_state_flag = 3;
         }
 #endif  // BE_MINIMAL
+
 #ifdef USE_DISCOVERY
         if (!mdns_begun) {
-          mdns_begun = MDNS.begin(my_hostname);
-          snprintf_P(log_data, sizeof(log_data), PSTR(D_LOG_MDNS "%s"), (mdns_begun) ? D_INITIALIZED : D_FAILED);
-          AddLog(LOG_LEVEL_INFO);
+          if (mdns_delayed_start) {
+            AddLog_P(LOG_LEVEL_INFO, PSTR(D_LOG_MDNS D_ATTEMPTING_CONNECTION));
+            mdns_delayed_start--;
+          } else {
+            mdns_delayed_start = Settings.param[P_MDNS_DELAYED_START];
+            mdns_begun = MDNS.begin(my_hostname);
+            snprintf_P(log_data, sizeof(log_data), PSTR(D_LOG_MDNS "%s"), (mdns_begun) ? D_INITIALIZED : D_FAILED);
+            AddLog(LOG_LEVEL_INFO);
+          }
         }
 #endif  // USE_DISCOVERY
+
 #ifdef USE_WEBSERVER
         if (Settings.webserver) {
           StartWebserver(Settings.webserver, WiFi.localIP());
 #ifdef USE_DISCOVERY
 #ifdef WEBSERVER_ADVERTISE
-          MDNS.addService("http", "tcp", WEB_PORT);
+          if (mdns_begun) {
+            MDNS.addService("http", "tcp", WEB_PORT);
+          }
 #endif  // WEBSERVER_ADVERTISE
 #endif  // USE_DISCOVERY
         } else {
@@ -1279,14 +1605,16 @@ void WifiCheck(uint8_t param)
         if (Settings.flag2.emulation) { UdpConnect(); }
 #endif  // USE_EMULATION
 #endif  // USE_WEBSERVER
+
 #ifdef USE_KNX
         if (!knx_started && Settings.flag.knx_enabled) {
           KNXStart();
           knx_started = true;
         }
 #endif  // USE_KNX
+
       } else {
-        WifiState(0);
+        WifiSetState(0);
 #if defined(USE_WEBSERVER) && defined(USE_EMULATION)
         UdpDisconnect();
 #endif  // USE_EMULATION
@@ -1301,7 +1629,7 @@ void WifiCheck(uint8_t param)
 
 int WifiState()
 {
-  int state;
+  int state = -1;
 
   if ((WL_CONNECTED == WiFi.status()) && (static_cast<uint32_t>(WiFi.localIP()) != 0)) {
     state = WIFI_RESTART;
@@ -1312,6 +1640,7 @@ int WifiState()
 
 void WifiConnect()
 {
+  WifiSetState(0);
   WiFi.persistent(false);    // Solve possible wifi init errors
   wifi_status = 0;
   wifi_retry_init = WIFI_RETRY_OFFSET_SEC + ((ESP.getChipId() & 0xF) * 2);
@@ -1344,38 +1673,6 @@ void EspRestart()
 {
   ESP.restart();
 }
-
-#ifdef USE_DISCOVERY
-/*********************************************************************************************\
- * mDNS
-\*********************************************************************************************/
-
-#ifdef MQTT_HOST_DISCOVERY
-boolean MdnsDiscoverMqttServer()
-{
-  if (!mdns_begun) {
-    return false;
-  }
-
-  int n = MDNS.queryService("mqtt", "tcp");  // Search for mqtt service
-
-  snprintf_P(log_data, sizeof(log_data), PSTR(D_LOG_MDNS D_QUERY_DONE " %d"), n);
-  AddLog(LOG_LEVEL_INFO);
-
-  if (n > 0) {
-    // Note: current strategy is to get the first MQTT service (even when many are found)
-    snprintf_P(Settings.mqtt_host, sizeof(Settings.mqtt_host), MDNS.IP(0).toString().c_str());
-    Settings.mqtt_port = MDNS.port(0);
-
-    snprintf_P(log_data, sizeof(log_data), PSTR(D_LOG_MDNS D_MQTT_SERVICE_FOUND " %s, " D_IP_ADDRESS " %s, " D_PORT " %d"),
-      MDNS.hostname(0).c_str(), Settings.mqtt_host, Settings.mqtt_port);
-    AddLog(LOG_LEVEL_INFO);
-  }
-
-  return n > 0;
-}
-#endif  // MQTT_HOST_DISCOVERY
-#endif  // USE_DISCOVERY
 
 /*********************************************************************************************\
  * Basic I2C routines
@@ -1542,27 +1839,35 @@ int8_t I2cWriteBuffer(uint8_t addr, uint8_t reg, uint8_t *reg_data, uint16_t len
 
 void I2cScan(char *devs, unsigned int devs_len)
 {
-  byte error;
-  byte address;
+  // Return error codes defined in twi.h and core_esp8266_si2c.c
+  // I2C_OK                      0
+  // I2C_SCL_HELD_LOW            1 = SCL held low by another device, no procedure available to recover
+  // I2C_SCL_HELD_LOW_AFTER_READ 2 = I2C bus error. SCL held low beyond slave clock stretch time
+  // I2C_SDA_HELD_LOW            3 = I2C bus error. SDA line held low by slave/another_master after n bits
+  // I2C_SDA_HELD_LOW_AFTER_INIT 4 = line busy. SDA again held low by another device. 2nd master?
+
+  byte error = 0;
+  byte address = 0;
   byte any = 0;
-  char tstr[10];
 
   snprintf_P(devs, devs_len, PSTR("{\"" D_CMND_I2CSCAN "\":\"" D_JSON_I2CSCAN_DEVICES_FOUND_AT));
   for (address = 1; address <= 127; address++) {
     Wire.beginTransmission(address);
     error = Wire.endTransmission();
     if (0 == error) {
-      snprintf_P(tstr, sizeof(tstr), PSTR(" 0x%2x"), address);
-      strncat(devs, tstr, devs_len);
       any = 1;
+      snprintf_P(devs, devs_len, PSTR("%s 0x%02x"), devs, address);
     }
-    else if (4 == error) {
-      snprintf_P(devs, devs_len, PSTR("{\"" D_CMND_I2CSCAN "\":\"" D_JSON_I2CSCAN_UNKNOWN_ERROR_AT " 0x%2x\"}"), address);
+    else if (error != 2) {  // Seems to happen anyway using this scan
+      any = 2;
+      snprintf_P(devs, devs_len, PSTR("{\"" D_CMND_I2CSCAN "\":\"Error %d at 0x%02x"), error, address);
+      break;
     }
   }
   if (any) {
     strncat(devs, "\"}", devs_len);
-  } else {
+  }
+  else {
     snprintf_P(devs, devs_len, PSTR("{\"" D_CMND_I2CSCAN "\":\"" D_JSON_I2CSCAN_NO_DEVICES_FOUND "\"}"));
   }
 }
@@ -1593,6 +1898,7 @@ extern "C" {
 #define SECS_PER_MIN  ((uint32_t)(60UL))
 #define SECS_PER_HOUR ((uint32_t)(3600UL))
 #define SECS_PER_DAY  ((uint32_t)(SECS_PER_HOUR * 24UL))
+#define MINS_PER_HOUR ((uint32_t)(60UL))
 #define LEAP_YEAR(Y)  (((1970+Y)>0) && !((1970+Y)%4) && (((1970+Y)%100) || !((1970+Y)%400)))
 
 Ticker TickerRtc;
@@ -1607,7 +1913,7 @@ uint32_t standard_time = 0;
 uint32_t ntp_time = 0;
 uint32_t midnight = 1451602800;
 uint32_t restart_time = 0;
-int16_t  time_timezone = 0;  // Timezone * 10
+int32_t  time_timezone = 0;
 uint8_t  midnight_now = 0;
 uint8_t  ntp_sync_minute = 0;
 
@@ -1637,48 +1943,81 @@ String GetBuildDateAndTime()
   }
   int month = (strstr(kMonthNamesEnglish, smonth) -kMonthNamesEnglish) /3 +1;
   snprintf_P(bdt, sizeof(bdt), PSTR("%d" D_YEAR_MONTH_SEPARATOR "%02d" D_MONTH_DAY_SEPARATOR "%02d" D_DATE_TIME_SEPARATOR "%s"), year, month, day, __TIME__);
-  return String(bdt);
+  return String(bdt);  // 2017-03-07T11:08:02
 }
 
+String GetTimeZone()
+{
+  char tz[7];
+
+  snprintf_P(tz, sizeof(tz), PSTR("%+03d:%02d"), time_timezone / 60, abs(time_timezone % 60));
+
+  return String(tz);  // -03:45
+}
+
+/*
+ * timestamps in https://en.wikipedia.org/wiki/ISO_8601 format
+ *
+ *  DT_UTC - current data and time in Greenwich, England (aka GMT)
+ *  DT_LOCAL - current date and time taking timezone into account
+ *  DT_RESTART - the date and time this device last started, in local timezone
+ *
+ * Format:
+ *  "2017-03-07T11:08:02-07:00" - if DT_LOCAL and SetOption52 = 1
+ *  "2017-03-07T11:08:02"       - otherwise
+ */
 String GetDateAndTime(byte time_type)
 {
-  // enum GetDateAndTimeOptions { DT_LOCAL, DT_UTC, DT_RESTART, DT_UPTIME };
-  // "2017-03-07T11:08:02" - ISO8601:2004
-  char dt[21];
+  // "2017-03-07T11:08:02-07:00" - ISO8601:2004
+  char dt[27];
   TIME_T tmpTime;
 
-  if (DT_UPTIME == time_type) {
-    if (restart_time) {
-      BreakTime(utc_time - restart_time, tmpTime);
-    } else {
-      BreakTime(uptime, tmpTime);
-    }
-    // "P128DT14H35M44S" - ISO8601:2004 - https://en.wikipedia.org/wiki/ISO_8601 Durations
-    // snprintf_P(dt, sizeof(dt), PSTR("P%dDT%02dH%02dM%02dS"), ut.days, ut.hour, ut.minute, ut.second);
-    // "128 14:35:44" - OpenVMS
-    // "128T14:35:44" - Tasmota
-    snprintf_P(dt, sizeof(dt), PSTR("%dT%02d:%02d:%02d"),
-      tmpTime.days, tmpTime.hour, tmpTime.minute, tmpTime.second);
-  } else {
-    switch (time_type) {
-      case DT_UTC:
-        BreakTime(utc_time, tmpTime);
-        tmpTime.year += 1970;
-        break;
-      case DT_RESTART:
-        if (restart_time == 0) {
-          return "";
-        }
-        BreakTime(restart_time, tmpTime);
-        tmpTime.year += 1970;
-        break;
-      default:
-        tmpTime = RtcTime;
-    }
-    snprintf_P(dt, sizeof(dt), PSTR("%04d-%02d-%02dT%02d:%02d:%02d"),
-      tmpTime.year, tmpTime.month, tmpTime.day_of_month, tmpTime.hour, tmpTime.minute, tmpTime.second);
+  switch (time_type) {
+    case DT_ENERGY:
+      BreakTime(Settings.energy_kWhtotal_time, tmpTime);
+      tmpTime.year += 1970;
+      break;
+    case DT_UTC:
+      BreakTime(utc_time, tmpTime);
+      tmpTime.year += 1970;
+      break;
+    case DT_RESTART:
+      if (restart_time == 0) {
+        return "";
+      }
+      BreakTime(restart_time, tmpTime);
+      tmpTime.year += 1970;
+      break;
+    default:
+      tmpTime = RtcTime;
   }
-  return String(dt);
+
+  snprintf_P(dt, sizeof(dt), PSTR("%04d-%02d-%02dT%02d:%02d:%02d"),
+    tmpTime.year, tmpTime.month, tmpTime.day_of_month, tmpTime.hour, tmpTime.minute, tmpTime.second);
+
+  if (Settings.flag3.time_append_timezone && (DT_LOCAL == time_type)) {
+//  if (Settings.flag3.time_append_timezone && ((DT_LOCAL == time_type) || (DT_ENERGY == time_type))) {
+    strncat(dt, GetTimeZone().c_str(), sizeof(dt));
+  }
+
+  return String(dt);  // 2017-03-07T11:08:02-07:00
+}
+
+String GetTime(int type)
+{
+  /* type 1 - Local time
+   * type 2 - Daylight Savings time
+   * type 3 - Standard time
+   */
+  char stime[25];   // Skip newline
+
+  uint32_t time = utc_time;
+  if (1 == type) time = local_time;
+  if (2 == type) time = daylight_saving_time;
+  if (3 == type) time = standard_time;
+  snprintf_P(stime, sizeof(stime), sntp_get_real_time(time));
+
+  return String(stime);  // Thu Nov 01 11:41:02 2018
 }
 
 String GetUptime()
@@ -1698,9 +2037,9 @@ String GetUptime()
 
   // "128 14:35:44" - OpenVMS
   // "128T14:35:44" - Tasmota
-  snprintf_P(dt, sizeof(dt), PSTR("%dT%02d:%02d:%02d"),
-    ut.days, ut.hour, ut.minute, ut.second);
-  return String(dt);
+  snprintf_P(dt, sizeof(dt), PSTR("%dT%02d:%02d:%02d"), ut.days, ut.hour, ut.minute, ut.second);
+
+  return String(dt);  // 128T14:35:44
 }
 
 uint32_t GetMinutesUptime()
@@ -1848,18 +2187,6 @@ uint32_t RuleToTime(TimeRule r, int yr)
   return t;
 }
 
-String GetTime(int type)
-{
-  char stime[25];   // Skip newline
-
-  uint32_t time = utc_time;
-  if (1 == type) time = local_time;
-  if (2 == type) time = daylight_saving_time;
-  if (3 == type) time = standard_time;
-  snprintf_P(stime, sizeof(stime), sntp_get_real_time(time));
-  return String(stime);
-}
-
 uint32_t LocalTime()
 {
   return local_time;
@@ -1879,8 +2206,6 @@ boolean MidnightNow()
 
 void RtcSecond()
 {
-  int32_t stdoffset;
-  int32_t dstoffset;
   TIME_T tmpTime;
 
   if ((ntp_sync_minute > 59) && (RtcTime.minute > 2)) ntp_sync_minute = 1;                 // If sync prepare for a new cycle
@@ -1906,11 +2231,6 @@ void RtcSecond()
       } else {
         rules_flag.time_set = 1;
       }
-//STB mod
-      if (Settings.tele_period == 10) {
-        tele_period = Settings.tele_period ;
-      }
-//end
     } else {
       ntp_sync_minute++;  // Try again in next minute
     }
@@ -1918,28 +2238,31 @@ void RtcSecond()
   utc_time++;
   local_time = utc_time;
   if (local_time > 1451602800) {  // 2016-01-01
-    int32_t time_offset = Settings.timezone * SECS_PER_HOUR;
+    int16_t timezone_minutes = Settings.timezone_minutes;
+    if (Settings.timezone < 0) { timezone_minutes *= -1; }
+    time_timezone = (Settings.timezone * SECS_PER_HOUR) + (timezone_minutes * SECS_PER_MIN);
     if (99 == Settings.timezone) {
-      dstoffset = Settings.toffset[1] * SECS_PER_MIN;
-      stdoffset = Settings.toffset[0] * SECS_PER_MIN;
+      int32_t dstoffset = Settings.toffset[1] * SECS_PER_MIN;
+      int32_t stdoffset = Settings.toffset[0] * SECS_PER_MIN;
       if (Settings.tflag[1].hemis) {
         // Southern hemisphere
         if ((utc_time >= (standard_time - dstoffset)) && (utc_time < (daylight_saving_time - stdoffset))) {
-          time_offset = stdoffset;  // Standard Time
+          time_timezone = stdoffset;  // Standard Time
         } else {
-          time_offset = dstoffset;  // Daylight Saving Time
+          time_timezone = dstoffset;  // Daylight Saving Time
         }
       } else {
         // Northern hemisphere
         if ((utc_time >= (daylight_saving_time - stdoffset)) && (utc_time < (standard_time - dstoffset))) {
-          time_offset = dstoffset;  // Daylight Saving Time
+          time_timezone = dstoffset;  // Daylight Saving Time
         } else {
-          time_offset = stdoffset;  // Standard Time
+          time_timezone = stdoffset;  // Standard Time
         }
       }
     }
-    local_time += time_offset;
-    time_timezone = time_offset / 360;  // (SECS_PER_HOUR / 10) fails as it is defined as UL
+    local_time += time_timezone;
+    time_timezone /= 60;
+    if (!Settings.energy_kWhtotal_time) { Settings.energy_kWhtotal_time = local_time; }
   }
   BreakTime(local_time, RtcTime);
   if (!RtcTime.hour && !RtcTime.minute && !RtcTime.second && RtcTime.valid) {
@@ -1967,7 +2290,6 @@ void RtcInit()
  * ADC support
 \*********************************************************************************************/
 
-uint8_t adc_counter = 0;
 uint16_t adc_last_value = 0;
 
 uint16_t AdcRead()
@@ -1982,17 +2304,14 @@ uint16_t AdcRead()
 }
 
 #ifdef USE_RULES
-void AdcEvery50ms()
+void AdcEvery250ms()
 {
-  adc_counter++;
-  if (!(adc_counter % 4)) {
-    uint16_t new_value = AdcRead();
-    if ((new_value < adc_last_value -10) || (new_value > adc_last_value +10)) {
-      adc_last_value = new_value;
-      uint16_t value = adc_last_value / 10;
-      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"ANALOG\":{\"A0div10\":%d}}"), (value > 99) ? 100 : value);
-      XdrvRulesProcess();
-    }
+  uint16_t new_value = AdcRead();
+  if ((new_value < adc_last_value -10) || (new_value > adc_last_value +10)) {
+    adc_last_value = new_value;
+    uint16_t value = adc_last_value / 10;
+    snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"ANALOG\":{\"A0div10\":%d}}"), (value > 99) ? 100 : value);
+    XdrvRulesProcess();
   }
 }
 #endif  // USE_RULES
@@ -2023,8 +2342,8 @@ boolean Xsns02(byte function)
   if (pin[GPIO_ADC0] < 99) {
     switch (function) {
 #ifdef USE_RULES
-      case FUNC_EVERY_50_MSECOND:
-        AdcEvery50ms();
+      case FUNC_EVERY_250_MSECOND:
+        AdcEvery250ms();
         break;
 #endif  // USE_RULES
       case FUNC_JSON_APPEND:

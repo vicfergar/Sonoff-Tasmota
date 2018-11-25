@@ -49,14 +49,6 @@ byte          Settings.knx_CB_param[MAX_KNX_CB]     Type of Output (set relay, t
 \*********************************************************************************************/
 
 #include <esp-knx-ip.h>         // KNX Library
-                                //   Note: Inside the <esp-knx-ip.h> file there is a //#define USE_ASYNC_UDP    // UDP WIFI Library Selection for Multicast
-                                //         If commented out, the esp-knx-ip library will use WIFI_UDP Library that is compatible with ESP8266 Library Version 2.3.0 and up
-                                //         If not commented out, the esp-knx-ip library will use ESPAsyncUDP Library that is compatible with ESP8266 Library Version 2.4.0 and up
-                                //            The ESPAsyncUDP Library have a more reliable multicast communication
-                                //            Please Use it with Patch (https://github.com/me-no-dev/ESPAsyncUDP/pull/21) )
-
-//void KNX_CB_Action(message_t const &msg, void *arg);  // Define function (action callback) to be called by the Esp-KNX-IP Library
-                                                      // when an action is requested by another KNX Device
 
 address_t KNX_physs_addr;  // Physical KNX address of this device
 address_t KNX_addr;        // KNX Address converter variable
@@ -400,6 +392,7 @@ void KNX_DEL_CB( byte CBnum )
 
 bool KNX_CONFIG_NOT_MATCH()
 {
+  // Check for configured parameters that the device does not have (module changed)
   for (byte i = 0; i < KNX_MAX_device_param; ++i)
   {
     if ( !device_param[i].show ) { // device has this parameter ?
@@ -407,19 +400,42 @@ bool KNX_CONFIG_NOT_MATCH()
 
       // Checks all GA
       if ( KNX_GA_Search(i+1) != KNX_Empty ) { return true; }
-
       // Check all CB
       if ( i < 8 ) // check relays (i from 8 to 15 are toggle relays parameters)
       {
         if ( KNX_CB_Search(i+1) != KNX_Empty ) { return true; }
         if ( KNX_CB_Search(i+9) != KNX_Empty ) { return true; }
       }
-      if ( i > 15 ) // check sensors and others
+      // check sensors and others
+      if ( i > 15 )
       {
         if ( KNX_CB_Search(i+1) != KNX_Empty ) { return true; }
       }
     }
   }
+
+  // Check for invalid or erroneous configuration (tasmota flashed without clearing the memory)
+  for (byte i = 0; i < Settings.knx_GA_registered; ++i)
+  {
+    if ( Settings.knx_GA_param[i] != 0 ) // the GA[i] have a parameter defined?
+    {
+      if ( Settings.knx_GA_addr[i] == 0 ) // the GA[i] with parameter have the 0/0/0 as address?
+      {
+         return true; // So, it is invalid. Reset KNX configuration
+      }
+    }
+  }
+  for (byte i = 0; i < Settings.knx_CB_registered; ++i)
+  {
+    if ( Settings.knx_CB_param[i] != 0 ) // the CB[i] have a parameter defined?
+    {
+      if ( Settings.knx_CB_addr[i] == 0 ) // the CB[i] with parameter have the 0/0/0 as address?
+      {
+         return true; // So, it is invalid. Reset KNX configuration
+      }
+    }
+  }
+
   return false;
 }
 
@@ -725,6 +741,9 @@ void KnxSensor(byte sensor_type, float value)
 #ifdef USE_KNX_WEB_MENU
 const char S_CONFIGURE_KNX[] PROGMEM = D_CONFIGURE_KNX;
 
+const char HTTP_BTN_MENU_KNX[] PROGMEM =
+  "<br/><form action='kn' method='get'><button>" D_CONFIGURE_KNX "</button></form>";
+
 const char HTTP_FORM_KNX[] PROGMEM =
   "<fieldset><legend style='text-align:left;'><b>&nbsp;" D_KNX_PARAMETERS "&nbsp;</b></legend><form method='post' action='kn'>"
   "<br/><center>"
@@ -760,7 +779,6 @@ const char HTTP_FORM_KNX_ADD_BTN[] PROGMEM =
 
 const char HTTP_FORM_KNX_ADD_TABLE_ROW[] PROGMEM =
   "<tr><td><b>{optex} -> GAfnum / GAarea / GAfdef </b></td>"
-//  "<td><button type='submit' name='btn_del_ga' value='{opval}' style='background-color: #eb1e1e;'> " D_DELETE " </button></td></tr>";
   "<td><button type='submit' name='btn_del_ga' value='{opval}' class='button bred'> " D_DELETE " </button></td></tr>";
 
 const char HTTP_FORM_KNX3[] PROGMEM =
@@ -773,20 +791,16 @@ const char HTTP_FORM_KNX4[] PROGMEM =
 
 const char HTTP_FORM_KNX_ADD_TABLE_ROW2[] PROGMEM =
   "<tr><td><b>GAfnum / GAarea / GAfdef -> {optex}</b></td>"
-//  "<td><button type='submit' name='btn_del_cb' value='{opval}' style='background-color: #eb1e1e;'> " D_DELETE " </button></td></tr>";
   "<td><button type='submit' name='btn_del_cb' value='{opval}' class='button bred'> " D_DELETE " </button></td></tr>";
-
 
 void HandleKNXConfiguration()
 {
+  if (HttpUser()) { return; }
+  if (!WebAuthenticate()) { return WebServer->requestAuthentication(); }
+  AddLog_P(LOG_LEVEL_DEBUG, S_LOG_HTTP, S_CONFIGURE_KNX);
+
   char tmp[100];
   String stmp;
-
-  if (HTTP_USER == webserver_state) {
-    HandleRoot();
-    return;
-  }
-  AddLog_P(LOG_LEVEL_DEBUG, S_LOG_HTTP, S_CONFIGURE_KNX);
 
   if ( WebServer->hasArg("save") ) {
     KNX_Save_Settings();
@@ -949,7 +963,7 @@ void HandleKNXConfiguration()
       }
     }
     page += F("</table></center></fieldset>");
-    page += F("<br/><button name='save' type='submit'>" D_SAVE "</button></form></fieldset>");
+    page += F("<br/><button name='save' type='submit' class='button bgrn'>" D_SAVE "</button></form></fieldset>");
     page += FPSTR(HTTP_BTN_CONF);
 
     page.replace( F("</script>"),
@@ -1132,7 +1146,7 @@ boolean KnxCommand()
   else if (CMND_KNX_PA == command_code) {
     if (XdrvMailbox.data_len) {
       if (strstr(XdrvMailbox.data, ".")) {     // Process parameter entry
-        char sub_string[XdrvMailbox.data_len +1];
+        char sub_string[XdrvMailbox.data_len];
 
         int pa_area = atoi(subStr(sub_string, XdrvMailbox.data, ".", 1));
         int pa_line = atoi(subStr(sub_string, XdrvMailbox.data, ".", 2));
@@ -1159,7 +1173,7 @@ boolean KnxCommand()
   else if ((CMND_KNX_GA == command_code) && (index > 0) && (index <= MAX_KNX_GA)) {
     if (XdrvMailbox.data_len) {
       if (strstr(XdrvMailbox.data, ",")) {     // Process parameter entry
-        char sub_string[XdrvMailbox.data_len +1];
+        char sub_string[XdrvMailbox.data_len];
 
         int ga_option = atoi(subStr(sub_string, XdrvMailbox.data, ",", 1));
         int ga_area = atoi(subStr(sub_string, XdrvMailbox.data, ",", 2));
@@ -1208,7 +1222,7 @@ boolean KnxCommand()
   else if ((CMND_KNX_CB == command_code) && (index > 0) && (index <= MAX_KNX_CB)) {
     if (XdrvMailbox.data_len) {
       if (strstr(XdrvMailbox.data, ",")) {     // Process parameter entry
-        char sub_string[XdrvMailbox.data_len +1];
+        char sub_string[XdrvMailbox.data_len];
 
         int cb_option = atoi(subStr(sub_string, XdrvMailbox.data, ",", 1));
         int cb_area = atoi(subStr(sub_string, XdrvMailbox.data, ",", 2));
@@ -1273,6 +1287,16 @@ boolean Xdrv11(byte function)
       case FUNC_PRE_INIT:
         KNX_INIT();
         break;
+#ifdef USE_WEBSERVER
+#ifdef USE_KNX_WEB_MENU
+      case FUNC_WEB_ADD_BUTTON:
+        strncat_P(mqtt_data, HTTP_BTN_MENU_KNX, sizeof(mqtt_data));
+        break;
+      case FUNC_WEB_ADD_HANDLER:
+        WebServer->on("/kn", HandleKNXConfiguration);
+        break;
+#endif // USE_KNX_WEB_MENU
+#endif  // USE_WEBSERVER
       case FUNC_LOOP:
         knx.loop();  // Process knx events
         break;
