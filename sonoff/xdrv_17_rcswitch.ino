@@ -1,7 +1,7 @@
 /*
   xdrv_17_rcswitch.ino - RF transceiver using RcSwitch library for Sonoff-Tasmota
 
-  Copyright (C) 2018  Theo Arends
+  Copyright (C) 2019  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,6 +22,8 @@
  * RF send and receive using RCSwitch library https://github.com/sui77/rc-switch/
 \*********************************************************************************************/
 
+#define XDRV_17             17
+
 #define D_JSON_RF_PROTOCOL "Protocol"
 #define D_JSON_RF_BITS "Bits"
 #define D_JSON_RF_DATA "Data"
@@ -34,11 +36,11 @@
 
 RCSwitch mySwitch = RCSwitch();
 
-#define RF_TIME_AVOID_DUPLICATE 1000 // Milliseconds
+#define RF_TIME_AVOID_DUPLICATE 1000  // Milliseconds
 
 uint32_t rf_lasttime = 0;
 
-void RfReceiveCheck()
+void RfReceiveCheck(void)
 {
   if (mySwitch.available()) {
 
@@ -47,8 +49,7 @@ void RfReceiveCheck()
     int protocol = mySwitch.getReceivedProtocol();
     int delay = mySwitch.getReceivedDelay();
 
-    snprintf_P(log_data, sizeof(log_data), PSTR("RFR: Data %lX (%u), Bits %d, Protocol %d, Delay %d"), data, data, bits, protocol, delay);
-    AddLog(LOG_LEVEL_DEBUG);
+    AddLog_P2(LOG_LEVEL_DEBUG, PSTR("RFR: Data 0x%lX (%u), Bits %d, Protocol %d, Delay %d"), data, data, bits, protocol, delay);
 
     uint32_t now = millis();
     if ((now - rf_lasttime > RF_TIME_AVOID_DUPLICATE) && (data > 0)) {
@@ -58,10 +59,10 @@ void RfReceiveCheck()
       if (Settings.flag.rf_receive_decimal) {      // SetOption28 (0 = hexadecimal, 1 = decimal)
         snprintf_P(stemp, sizeof(stemp), PSTR("%u"), (uint32_t)data);
       } else {
-        snprintf_P(stemp, sizeof(stemp), PSTR("\"%lX\""), (uint32_t)data);
+        snprintf_P(stemp, sizeof(stemp), PSTR("\"0x%lX\""), (uint32_t)data);
       }
-      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"" D_JSON_RFRECEIVED "\":{\"" D_JSON_RF_DATA "\":%s,\"" D_JSON_RF_BITS "\":%d,\"" D_JSON_RF_PROTOCOL "\":%d}}"),
-          stemp, bits, protocol);
+      Response_P(PSTR("{\"" D_JSON_RFRECEIVED "\":{\"" D_JSON_RF_DATA "\":%s,\"" D_JSON_RF_BITS "\":%d,\"" D_JSON_RF_PROTOCOL "\":%d,\"" D_JSON_RF_PULSE "\":%d}}"),
+        stemp, bits, protocol, delay);
       MqttPublishPrefixTopic_P(RESULT_OR_TELE, PSTR(D_JSON_RFRECEIVED));
       XdrvRulesProcess();
 #ifdef USE_DOMOTICZ
@@ -72,7 +73,7 @@ void RfReceiveCheck()
   }
 }
 
-void RfInit()
+void RfInit(void)
 {
   if (pin[GPIO_RFSEND] < 99) {
     mySwitch.enableTransmit(pin[GPIO_RFSEND]);
@@ -86,10 +87,10 @@ void RfInit()
  * Commands
 \*********************************************************************************************/
 
-boolean RfSendCommand()
+bool RfSendCommand(void)
 {
-  boolean serviced = true;
-  boolean error = false;
+  bool serviced = true;
+  bool error = false;
 
   if (!strcasecmp_P(XdrvMailbox.topic, PSTR(D_CMND_RFSEND))) {
     if (XdrvMailbox.data_len) {
@@ -106,7 +107,7 @@ boolean RfSendCommand()
       if (root.success()) {
         // RFsend {"data":0x501014,"bits":24,"protocol":1,"repeat":10,"pulse":350}
         char parm_uc[10];
-        data = strtoul(root[UpperCase_P(parm_uc, PSTR(D_JSON_RF_DATA))], NULL, 0);  // Allow decimal (5246996) and hexadecimal (0x501014) input
+        data = strtoul(root[UpperCase_P(parm_uc, PSTR(D_JSON_RF_DATA))], nullptr, 0);  // Allow decimal (5246996) and hexadecimal (0x501014) input
         bits = root[UpperCase_P(parm_uc, PSTR(D_JSON_RF_BITS))];
         protocol = root[UpperCase_P(parm_uc, PSTR(D_JSON_RF_PROTOCOL))];
         repeat = root[UpperCase_P(parm_uc, PSTR(D_JSON_RF_REPEAT))];
@@ -114,11 +115,11 @@ boolean RfSendCommand()
       } else {
         //  RFsend data, bits, protocol, repeat, pulse
         char *p;
-        byte i = 0;
-        for (char *str = strtok_r(XdrvMailbox.data, ", ", &p); str && i < 5; str = strtok_r(NULL, ", ", &p)) {
+        uint8_t i = 0;
+        for (char *str = strtok_r(XdrvMailbox.data, ", ", &p); str && i < 5; str = strtok_r(nullptr, ", ", &p)) {
           switch (i++) {
           case 0:
-            data = strtoul(str, NULL, 0);  // Allow decimal (5246996) and hexadecimal (0x501014) input
+            data = strtoul(str, nullptr, 0);  // Allow decimal (5246996) and hexadecimal (0x501014) input
             break;
           case 1:
             bits = atoi(str);
@@ -144,7 +145,7 @@ boolean RfSendCommand()
       if (!bits) { bits = 24; }         // Default 24 bits
       if (data) {
         mySwitch.send(data, bits);
-        snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"" D_CMND_RFSEND "\":\"" D_JSON_DONE "\"}"));
+        Response_P(PSTR("{\"" D_CMND_RFSEND "\":\"" D_JSON_DONE "\"}"));
       } else {
         error = true;
       }
@@ -152,7 +153,7 @@ boolean RfSendCommand()
       error = true;
     }
     if (error) {
-      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"" D_CMND_RFSEND "\":\"" D_JSON_NO " " D_JSON_RF_DATA ", " D_JSON_RF_BITS ", " D_JSON_RF_PROTOCOL ", " D_JSON_RF_REPEAT " " D_JSON_OR " " D_JSON_RF_PULSE "\"}"));
+      Response_P(PSTR("{\"" D_CMND_RFSEND "\":\"" D_JSON_NO " " D_JSON_RF_DATA ", " D_JSON_RF_BITS ", " D_JSON_RF_PROTOCOL ", " D_JSON_RF_REPEAT " " D_JSON_OR " " D_JSON_RF_PULSE "\"}"));
     }
   }
   else serviced = false; // Unknown command
@@ -164,11 +165,9 @@ boolean RfSendCommand()
  * Interface
 \*********************************************************************************************/
 
-#define XDRV_17
-
-boolean Xdrv17(byte function)
+bool Xdrv17(uint8_t function)
 {
-  boolean result = false;
+  bool result = false;
 
   if ((pin[GPIO_RFSEND] < 99) || (pin[GPIO_RFRECV] < 99)) {
     switch (function) {

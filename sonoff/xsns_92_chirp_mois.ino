@@ -49,7 +49,7 @@ char chirpstype[7];
 uint16_t light;
 char temperature[6];
 char moisture[6];
-boolean test = false;
+bool test = false;
 uint16_t chirp_readLux(void)
 {
   uint8_t counter = 0;
@@ -65,13 +65,13 @@ uint16_t chirp_readLux(void)
 }
 
 
-boolean chirp_detect()
+bool chirp_detect()
 {
   if (chirptype) {
     return true;
   }
   uint8_t status;
-  boolean success = false;
+  bool success = false;
   chirpaddr = CHIRP_ADDR1;
   Wire.beginTransmission(chirpaddr);
   I2cRead8(chirpaddr,TWI_GET_VERSION);
@@ -98,10 +98,6 @@ boolean chirp_detect()
  * Presentation
 \*********************************************************************************************/
 #ifdef USE_WEBSERVER
- #ifndef USE_BH1750  // avoid duplicate definition
-  const char HTTP_SNS_ILLUMINANCE[] PROGMEM =  "%s{s}%s " D_ILLUMINANCE "{m}%d%%{e}";
- #endif //USE_BH1750
-
   const char HTTP_SNS_MOISTURE[] PROGMEM = "%s{s}%s " D_MOISTURE "{m}%s%%{e}";
 #endif // USE_WEBSERVER
 
@@ -139,7 +135,7 @@ void chirp_Get() {
 
 }
 
-void chirp_Show(boolean json)
+void chirp_Show(bool json)
 {
   if (test) {
 
@@ -175,9 +171,9 @@ void chirp_Show(boolean json)
 
 #define XSNS_92
 
-boolean Xsns92(byte function)
+bool Xsns92(uint8_t function)
 {
-  boolean result = false;
+  bool result = false;
 
   if (i2c_flg) {
     switch (function) {
@@ -193,7 +189,7 @@ boolean Xsns92(byte function)
 
         break;
 #ifdef USE_WEBSERVER
-      case FUNC_WEB_APPEND:
+      case FUNC_WEB_SENSOR:
         chirp_Show(0);
         break;
 #endif // USE_WEBSERVER

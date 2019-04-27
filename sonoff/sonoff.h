@@ -1,7 +1,7 @@
 /*
   sonoff.h - Master header file for Sonoff-Tasmota
 
-  Copyright (C) 2018  Theo Arends
+  Copyright (C) 2019  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,6 +19,18 @@
 
 #ifndef _SONOFF_H_
 #define _SONOFF_H_
+
+/*********************************************************************************************\
+ * Performance ROM (PROGMEM) vs RAM (RODATA)
+\*********************************************************************************************/
+
+//#define XFUNC_PTR_IN_ROM                    // Enable for keeping tables in ROM (PROGMEM) which seem to have access issues on some flash types
+
+/*********************************************************************************************\
+ * Default sensor states
+\*********************************************************************************************/
+
+#define CODE_IMAGE 0
 
 #define USE_DHT                             // Default DHT11 sensor needs no external library
 #define USE_ENERGY_SENSOR                   // Use energy sensors (+14k code)
@@ -39,6 +51,7 @@ typedef unsigned long power_t;              // Power (Relay) type
 // Changes to the following MAX_ defines will impact settings layout
 #define MAX_SWITCHES           8            // Max number of switches
 #define MAX_RELAYS             8            // Max number of relays
+#define MAX_INTERLOCKS         4            // Max number of interlock groups (MAX_RELAYS / 2)
 #define MAX_LEDS               4            // Max number of leds
 #define MAX_KEYS               4            // Max number of keys or buttons
 #define MAX_PWMS               5            // Max number of PWM channels
@@ -50,6 +63,10 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define MAX_DOMOTICZ_SNS_IDX   12           // Max number of Domoticz sensors indices
 #define MAX_KNX_GA             10           // Max number of KNX Group Addresses to read that can be set
 #define MAX_KNX_CB             10           // Max number of KNX Group Addresses to write that can be set
+#define MAX_XNRG_DRIVERS       32           // Max number of allowed energy drivers
+#define MAX_XDSP_DRIVERS       32           // Max number of allowed display drivers
+#define MAX_XDRV_DRIVERS       96           // Max number of allowed driver drivers
+#define MAX_XSNS_DRIVERS       96           // Max number of allowed sensor drivers
 #define MAX_RULE_MEMS          5            // Max number of saved vars
 #define MAX_RULE_SETS          3            // Max number of rule sets of size 512 characters
 #define MAX_RULE_SIZE          512          // Max number of characters in rules
@@ -57,6 +74,8 @@ typedef unsigned long power_t;              // Power (Relay) type
 // Changes to the following defines have no impact on settings layout
 #define MAX_RULE_TIMERS        8            // Max number of rule timers (4 bytes / timer)
 #define MAX_RULE_VARS          5            // Max number of rule variables (10 bytes / variable)
+
+#define MAX_FAN_SPEED          4            // Max number of iFan02 fan speeds (0 .. 3)
 
 #define MQTT_TOKEN_PREFIX      "%prefix%"   // To be substituted by mqtt_prefix[x]
 #define MQTT_TOKEN_TOPIC       "%topic%"    // To be substituted by mqtt_topic, mqtt_grptopic, mqtt_buttontopic, mqtt_switchtopic
@@ -85,6 +104,7 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define PWM_MIN                100          // [PWM_MIN] Minimum frequency - Default: 100
                                             //    For Dimmers use double of your mains AC frequecy (100 for 50Hz and 120 for 60Hz)
                                             //    For Controlling Servos use 50 and also set PWM_FREQ as 50 (DO NOT USE THESE VALUES FOR DIMMERS)
+//#define PWM_LIGHTSCHEME0_IGNORE_SLEEP       // Do not change sleep value for LightAnimate() scheme 0
 
 #define DEFAULT_POWER_DELTA    80           // Power change percentage
 #define MAX_POWER_HOLD         10           // Time in SECONDS to allow max agreed power
@@ -103,7 +123,7 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define INPUT_BUFFER_SIZE      520          // Max number of characters in (serial and http) command buffer
 #define CMDSZ                  24           // Max number of characters in command
 #define TOPSZ                  100          // Max number of characters in topic string
-#define LOGSZ                  512          // Max number of characters in log
+#define LOGSZ                  520          // Max number of characters in log
 #define MIN_MESSZ              893          // Min number of characters in MQTT message
 
 #define SENSOR_MAX_MISS        5            // Max number of missed sensor reads before deciding it's offline
@@ -122,6 +142,9 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define SERIAL_POLLING         100          // Serial receive polling in ms
 #define MAX_STATUS             11           // Max number of status lines
 
+#define DRIVER_BOOT_DELAY      1            // Number of milliseconds to retard driver cycles during boot-up time to reduce overall CPU load whilst Wifi is connecting
+#define LOOP_SLEEP_DELAY       50           // Lowest number of milliseconds to go through the main loop using delay when needed
+
 #define NO_EXTRA_4K_HEAP                    // Allocate 4k heap for WPS in ESP8166/Arduino core v2.4.2 (was always allocated in previous versions)
 
 /*
@@ -133,7 +156,9 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define tmax(a,b) ((a)>(b)?(a):(b))
 
 #define STR_HELPER(x) #x
+#ifndef STR
 #define STR(x) STR_HELPER(x)
+#endif
 
 //enum ws2812NeopixelbusFeature { NEO_RGB, NEO_GRB, NEO_BRG, NEO_RBG, NEO_3LED, NEO_RGBW, NEO_GRBW };  // Doesn't work
 #define NEO_RGB                0            // Neopixel RGB leds
@@ -143,6 +168,15 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define NEO_3LED               4            // Placeholder to test for 4 led types
 #define NEO_RGBW               5            // Neopixel RGBW leds
 #define NEO_GRBW               6            // Neopixel GRBW leds
+
+#define LT_SM16716             16           // Lights that use SM16716 will have this bit set in light_type
+
+#define RGB_REMAP_RGBW         0
+#define RGB_REMAP_RBGW         6
+#define RGB_REMAP_GRBW         24
+#define RGB_REMAP_GBRW         30
+#define RGB_REMAP_BRGW         48
+#define RGB_REMAP_BGRW         54
 
 #define MQTT_PUBSUBCLIENT      1            // Mqtt PubSubClient library
 #define MQTT_TASMOTAMQTT       2            // Mqtt TasmotaMqtt library based on esp-mqtt-arduino - soon obsolete
@@ -177,8 +211,6 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define KNX_MAX_device_param   30
 #define MAX_KNXTX_CMNDS        5
 
-#define DRIVER_BOOT_DELAY       1                // Number of milliseconds to retard driver cycles during boot-up time to reduce overall CPU load whilst Wifi is connecting
-
 /*********************************************************************************************\
  * Enumeration
 \*********************************************************************************************/
@@ -191,7 +223,7 @@ enum GetDateAndTimeOptions { DT_LOCAL, DT_UTC, DT_RESTART, DT_ENERGY };
 
 enum LoggingLevels {LOG_LEVEL_NONE, LOG_LEVEL_ERROR, LOG_LEVEL_INFO, LOG_LEVEL_DEBUG, LOG_LEVEL_DEBUG_MORE, LOG_LEVEL_ALL};
 
-enum WifiConfigOptions {WIFI_RESTART, WIFI_SMARTCONFIG, WIFI_MANAGER, WIFI_WPSCONFIG, WIFI_RETRY, WIFI_WAIT, WIFI_SERIAL, MAX_WIFI_OPTION};
+enum WifiConfigOptions {WIFI_RESTART, WIFI_SMARTCONFIG, WIFI_MANAGER, WIFI_WPSCONFIG, WIFI_RETRY, WIFI_WAIT, WIFI_SERIAL, WIFI_MANAGER_RESET_ONLY, MAX_WIFI_OPTION};
 
 enum SwitchModeOptions {TOGGLE, FOLLOW, FOLLOW_INV, PUSHBUTTON, PUSHBUTTON_INV, PUSHBUTTONHOLD, PUSHBUTTONHOLD_INV, PUSHBUTTON_TOGGLE, MAX_SWITCH_OPTION};
 
@@ -209,7 +241,7 @@ enum ButtonStates { PRESSED, NOT_PRESSED };
 
 enum Shortcuts { SC_CLEAR, SC_DEFAULT, SC_USER };
 
-enum SettingsParmaIndex {P_HOLD_TIME, P_MAX_POWER_RETRY, P_TUYA_DIMMER_ID, P_MDNS_DELAYED_START, P_MAX_PARAM8};  // Max is PARAM8_SIZE (18)
+enum SettingsParmaIndex {P_HOLD_TIME, P_MAX_POWER_RETRY, P_TUYA_DIMMER_ID, P_MDNS_DELAYED_START, P_BOOT_LOOP_OFFSET, P_RGB_REMAP, P_MAX_PARAM8};  // Max is PARAM8_SIZE (18) - SetOption32 until SetOption49
 
 //stb mod
 enum DomoticzSensors {DZ_TEMP, DZ_TEMP_HUM, DZ_TEMP_HUM_BARO, DZ_POWER_ENERGY, DZ_ILLUMINANCE, DZ_COUNT, DZ_VOLTAGE, DZ_CURRENT, DZ_AIRQUALITY, DZ_SHUTTER, DZ_MAX_SENSORS};
@@ -217,28 +249,36 @@ enum DomoticzSensors {DZ_TEMP, DZ_TEMP_HUM, DZ_TEMP_HUM_BARO, DZ_POWER_ENERGY, D
 
 enum Ws2812ClockIndex { WS_SECOND, WS_MINUTE, WS_HOUR, WS_MARKER };
 enum Ws2812Color { WS_RED, WS_GREEN, WS_BLUE };
-enum LightTypes {LT_BASIC, LT_PWM1, LT_PWM2, LT_PWM3, LT_PWM4, LT_PWM5, LT_PWM6, LT_PWM7, LT_SERIAL, LT_NU9, LT_NU10, LT_WS2812, LT_RGBW, LT_RGBWC};
-enum LichtSubtypes {LST_NONE, LST_SINGLE, LST_COLDWARM, LST_RGB, LST_RGBW, LST_RGBWC};
-enum LichtSchemes {LS_POWER, LS_WAKEUP, LS_CYCLEUP, LS_CYCLEDN, LS_RANDOM, LS_MAX};
+
+enum LightSubtypes { LST_NONE, LST_SINGLE, LST_COLDWARM, LST_RGB,   LST_RGBW, LST_RGBWC };                   // Do not insert new fields
+enum LightTypes    { LT_BASIC, LT_PWM1,    LT_PWM2,      LT_PWM3,   LT_PWM4,  LT_PWM5,  LT_PWM6, LT_PWM7,
+                     LT_NU8,   LT_SERIAL1, LT_SERIAL2,   LT_WS2812, LT_RGBW,  LT_RGBWC, LT_NU14, LT_NU15 };  // Do not insert new fields
+
+enum LightSchemes {LS_POWER, LS_WAKEUP, LS_CYCLEUP, LS_CYCLEDN, LS_RANDOM, LS_MAX};
 
 enum XsnsFunctions {FUNC_SETTINGS_OVERRIDE, FUNC_MODULE_INIT, FUNC_PRE_INIT, FUNC_INIT,
                     FUNC_LOOP, FUNC_EVERY_50_MSECOND, FUNC_EVERY_100_MSECOND, FUNC_EVERY_200_MSECOND, FUNC_EVERY_250_MSECOND, FUNC_EVERY_SECOND,
-                    FUNC_PREP_BEFORE_TELEPERIOD, FUNC_JSON_APPEND, FUNC_WEB_APPEND, FUNC_SAVE_BEFORE_RESTART, FUNC_COMMAND,
+                    FUNC_PREP_BEFORE_TELEPERIOD, FUNC_JSON_APPEND, FUNC_WEB_SENSOR, FUNC_SAVE_BEFORE_RESTART, FUNC_COMMAND, FUNC_COMMAND_SENSOR, FUNC_COMMAND_DRIVER,
                     FUNC_MQTT_SUBSCRIBE, FUNC_MQTT_INIT, FUNC_MQTT_DATA,
                     FUNC_SET_POWER, FUNC_SET_DEVICE_POWER, FUNC_SHOW_SENSOR,
                     FUNC_RULES_PROCESS, FUNC_SERIAL, FUNC_FREE_MEM, FUNC_BUTTON_PRESSED,
-                    FUNC_WEB_ADD_BUTTON, FUNC_WEB_ADD_MAIN_BUTTON, FUNC_WEB_ADD_HANDLER};
-
-const uint8_t kDefaultRfCode[9] PROGMEM = { 0x21, 0x16, 0x01, 0x0E, 0x03, 0x48, 0x2E, 0x1A, 0x00 };
+                    FUNC_WEB_ADD_BUTTON, FUNC_WEB_ADD_MAIN_BUTTON, FUNC_WEB_ADD_HANDLER, FUNC_SET_CHANNELS};
 //stb mod
 enum CommandSource { SRC_IGNORE, SRC_MQTT, SRC_RESTART, SRC_BUTTON, SRC_SWITCH, SRC_BACKLOG, SRC_SERIAL, SRC_WEBGUI, SRC_WEBCOMMAND, SRC_WEBCONSOLE, SRC_PULSETIMER,
                      SRC_TIMER, SRC_RULE, SRC_MAXPOWER, SRC_MAXENERGY, SRC_LIGHT, SRC_KNX, SRC_DISPLAY, SRC_WEMO, SRC_HUE, SRC_RETRY, SRC_SHUTTER,SRC_MAX  };
 const char kCommandSource[] PROGMEM = "I|MQTT|Restart|Button|Switch|Backlog|Serial|WebGui|WebCommand|WebConsole|PulseTimer|Timer|Rule|MaxPower|MaxEnergy|Light|Knx|Display|Wemo|Hue|Retry|Shutter";
 //end
+
+const uint8_t kDefaultRfCode[9] PROGMEM = { 0x21, 0x16, 0x01, 0x0E, 0x03, 0x48, 0x2E, 0x1A, 0x00 };
+
+const uint8_t kIFan02Speed[MAX_FAN_SPEED][3] = {{6,6,6}, {7,6,6}, {7,7,6}, {7,6,7}};  // Do not use PROGMEM as it fails
+
 /*********************************************************************************************\
  * Extern global variables
 \*********************************************************************************************/
 
 extern uint8_t light_device;  // Light device number
+extern uint8_t light_power;  // Light power
+extern uint8_t rotary_changed; // Rotary switch changed
 
 #endif  // _SONOFF_H_
